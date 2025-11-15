@@ -61,8 +61,17 @@ class LinkedInEasyApplyBot {
         </button>
       </div>
       <div class="easy-apply-panel-body">
-        <div class="easy-apply-status">Status: <span id="easy-apply-status">Idle</span></div>
+        <div class="easy-apply-status">
+          <strong>Status:</strong> <span id="easy-apply-status">Idle</span>
+        </div>
+        <div class="easy-apply-activity" id="easy-apply-activity">
+          <strong>Activity:</strong>
+          <div id="easy-apply-activity-log" class="activity-log">
+            <div class="activity-item">Waiting to start...</div>
+          </div>
+        </div>
         <button id="search-and-apply-btn" class="easy-apply-search-btn">🔍 Search & Apply</button>
+        <div class="easy-apply-hint">💡 Open Console (F12) for detailed logs</div>
       </div>
     `;
 
@@ -77,6 +86,25 @@ class LinkedInEasyApplyBot {
     document.getElementById('search-and-apply-btn').addEventListener('click', () => {
       this.searchAndApply();
     });
+  }
+
+  /**
+   * Add activity log message
+   */
+  addActivityLog(message, type = 'info') {
+    const activityLog = document.getElementById('easy-apply-activity-log');
+    if (!activityLog) return;
+
+    const item = document.createElement('div');
+    item.className = `activity-item activity-${type}`;
+    item.textContent = `${new Date().toLocaleTimeString()}: ${message}`;
+
+    activityLog.insertBefore(item, activityLog.firstChild);
+
+    // Keep only last 5 messages
+    while (activityLog.children.length > 5) {
+      activityLog.removeChild(activityLog.lastChild);
+    }
   }
 
   /**
@@ -185,30 +213,77 @@ class LinkedInEasyApplyBot {
   }
 
   /**
-   * Find all Easy Apply buttons on the page
+   * Find all Easy Apply buttons on the page - FIXED TO AVOID FILTERS
    */
   findAllEasyApplyButtons() {
-    const selectors = [
-      'button.jobs-apply-button',
-      'button[aria-label*="Easy Apply"]',
-      'button:has-text("Easy Apply")',
-      '.jobs-apply-button',
-      'button.jobs-apply-button--top-card'
-    ];
+    log('🔍 Searching for ACTUAL Easy Apply buttons (not filters)...', 'info');
 
     const buttons = [];
-    selectors.forEach(selector => {
-      try {
-        const found = document.querySelectorAll(selector);
-        found.forEach(btn => {
-          const text = btn.textContent || btn.getAttribute('aria-label') || '';
-          if (text.includes('Easy Apply') && !buttons.includes(btn)) {
-            buttons.push(btn);
-          }
-        });
-      } catch (e) {}
-    });
 
+    // CRITICAL: Look for Easy Apply buttons ONLY in job cards and job details
+    // NOT in the filter/search bar at the top
+    const jobContainers = [
+      '.jobs-search-results__list',           // Job list container
+      '.jobs-search-results-list',            // Alternative job list
+      '.scaffold-layout__list',               // Job list scaffold
+      '.jobs-details',                        // Job details panel (right side)
+      '.jobs-details-top-card',              // Top card in details
+      '.jobs-unified-top-card'               // Unified top card
+    ];
+
+    // Search within job containers only
+    for (const containerSelector of jobContainers) {
+      const container = document.querySelector(containerSelector);
+      if (!container) continue;
+
+      // Look for Easy Apply buttons using specific selectors
+      const selectors = [
+        'button.jobs-apply-button',
+        'button.jobs-apply-button--top-card',
+        'button[aria-label*="Easy Apply to"]',  // Specific to job applications
+        'button.jobs-unified-top-card__job-insight-text-button'
+      ];
+
+      for (const selector of selectors) {
+        try {
+          const found = container.querySelectorAll(selector);
+          found.forEach(btn => {
+            const text = (btn.textContent || '').trim();
+            const ariaLabel = btn.getAttribute('aria-label') || '';
+            const classes = btn.className || '';
+
+            // STRICT: Must be an actual Easy Apply button
+            const isEasyApplyButton = (
+              text.includes('Easy Apply') ||
+              ariaLabel.includes('Easy Apply to')
+            );
+
+            // STRICT: Must NOT be a filter button
+            const isFilterButton = (
+              classes.includes('filter') ||
+              classes.includes('search-reusables') ||
+              btn.closest('.search-reusables__filter-list') ||
+              btn.closest('.search-reusables__filter-pill-bar') ||
+              btn.closest('[data-test-reusables-filters]') ||
+              ariaLabel.includes('filter') ||
+              ariaLabel.includes('Remove') ||
+              ariaLabel.includes('Reset')
+            );
+
+            if (isEasyApplyButton && !isFilterButton && !buttons.includes(btn)) {
+              log(`  ✅ Found REAL Easy Apply button: "${text}" | aria="${ariaLabel}"`, 'success');
+              buttons.push(btn);
+            } else if (isFilterButton) {
+              log(`  ❌ SKIPPING filter button: "${text}"`, 'warn');
+            }
+          });
+        } catch (e) {
+          log(`Error searching with selector ${selector}: ${e.message}`, 'warn');
+        }
+      }
+    }
+
+    log(`📊 Total REAL Easy Apply buttons found: ${buttons.length}`, 'info');
     return buttons;
   }
 
@@ -256,69 +331,180 @@ class LinkedInEasyApplyBot {
   }
 
   /**
-   * Find and apply to the next available job
+   * Find and apply to the next available job - IMPROVED STRATEGY
    */
   async findAndApplyToNextJob() {
-    const easyApplyButtons = this.findAllEasyApplyButtons();
+    log('🔍 Looking for jobs to apply to...', 'info');
+    this.updateStatus('Searching for jobs...');
+    this.addActivityLog('Searching for job cards...');
 
-    log(`Found ${easyApplyButtons.length} Easy Apply buttons`, 'info');
+    // STRATEGY: Find job cards first, then look for Easy Apply button
+    const jobCards = this.findJobCards();
 
-    for (const button of easyApplyButtons) {
-      // Scroll button into view
-      button.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (jobCards.length === 0) {
+      log('❌ No job cards found on page', 'warn');
+      this.addActivityLog('No job cards found', 'warn');
+      return false;
+    }
+
+    log(`📋 Found ${jobCards.length} job cards`, 'info');
+    this.addActivityLog(`Found ${jobCards.length} jobs on page`, 'success');
+
+    for (let i = 0; i < jobCards.length; i++) {
+      const jobCard = jobCards[i];
+
+      log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`, 'info');
+      log(`📌 Processing job ${i + 1}/${jobCards.length}...`, 'info');
+      this.updateStatus(`Processing job ${i + 1}/${jobCards.length}...`);
+      this.addActivityLog(`Processing job ${i + 1}/${jobCards.length}...`);
+
+      // Scroll job card into view
+      jobCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
       await sleep(1000);
 
       // Click the job card to open details
-      await this.clickJobCard(button);
-      await sleep(2000);
+      log('👆 Clicking job card to view details...', 'info');
+      this.addActivityLog('Opening job details...');
+      await this.clickJobCard(jobCard);
+      await sleep(3000); // Wait for job details to load
 
       // Extract job details
       const jobDetails = extractJobDetails();
 
       if (!jobDetails || !jobDetails.jobId) {
-        log('Could not extract job details, skipping...', 'warn');
+        log('⚠️  Could not extract job details, skipping...', 'warn');
+        this.addActivityLog('Could not load job info, skipping', 'warn');
         continue;
       }
+
+      log(`📄 Job: ${jobDetails.jobTitle} at ${jobDetails.companyName}`, 'info');
+      this.addActivityLog(`Checking: ${jobDetails.jobTitle}`);
 
       // Check if already applied
       if (this.settings.skipApplied) {
         const wasApplied = await Storage.wasJobApplied(jobDetails.jobId);
         if (wasApplied) {
-          log(`Already applied to ${jobDetails.jobTitle}, skipping...`, 'info');
+          log(`✓ Already applied to this job, skipping...`, 'info');
+          this.addActivityLog('Already applied, skipping', 'info');
           continue;
         }
       }
 
+      // NOW look for Easy Apply button in job details panel
+      log('🔍 Looking for Easy Apply button in job details...', 'info');
+      this.addActivityLog('Looking for Easy Apply button...');
+      const easyApplyButton = this.findEasyApplyButtonInJobDetails();
+
+      if (!easyApplyButton) {
+        log('❌ No Easy Apply button found for this job, skipping...', 'warn');
+        this.addActivityLog('Not an Easy Apply job, skipping', 'warn');
+        continue;
+      }
+
+      log(`✅ Found Easy Apply button! Starting application...`, 'success');
+      this.addActivityLog('Found Easy Apply! Starting...', 'success');
+
       // Apply to this job
-      log(`Attempting to apply to: ${jobDetails.jobTitle}`, 'info');
-      await this.applyToJob(button, jobDetails);
+      await this.applyToJob(easyApplyButton, jobDetails);
       return true;
     }
 
+    log('No more jobs to apply to', 'warn');
+    this.addActivityLog('No more jobs to apply to', 'warn');
     return false;
+  }
+
+  /**
+   * Find job cards on the page
+   */
+  findJobCards() {
+    const jobListSelectors = [
+      '.jobs-search-results__list li',
+      '.scaffold-layout__list-container li',
+      'ul.jobs-search-results__list > li'
+    ];
+
+    for (const selector of jobListSelectors) {
+      const cards = document.querySelectorAll(selector);
+      if (cards.length > 0) {
+        log(`Found ${cards.length} job cards using selector: ${selector}`, 'info');
+        return Array.from(cards);
+      }
+    }
+
+    return [];
+  }
+
+  /**
+   * Find Easy Apply button in the job details panel (right side)
+   */
+  findEasyApplyButtonInJobDetails() {
+    // Look ONLY in the job details panel (right side of the screen)
+    const jobDetailsSelectors = [
+      '.jobs-details',
+      '.jobs-details-top-card',
+      '.jobs-unified-top-card',
+      '.jobs-details__main-content'
+    ];
+
+    for (const selector of jobDetailsSelectors) {
+      const detailsPanel = document.querySelector(selector);
+      if (!detailsPanel) continue;
+
+      // Look for Easy Apply button within this panel
+      const buttonSelectors = [
+        'button.jobs-apply-button',
+        'button.jobs-apply-button--top-card',
+        'button[aria-label*="Easy Apply"]'
+      ];
+
+      for (const btnSelector of buttonSelectors) {
+        const buttons = detailsPanel.querySelectorAll(btnSelector);
+
+        for (const btn of buttons) {
+          const text = (btn.textContent || '').trim();
+          const ariaLabel = btn.getAttribute('aria-label') || '';
+
+          // Must contain "Easy Apply" and NOT be a filter
+          if ((text.includes('Easy Apply') || ariaLabel.includes('Easy Apply')) &&
+              !btn.closest('.search-reusables__filter-list')) {
+            log(`  ✅ Found Easy Apply button: "${text}"`, 'success');
+            return btn;
+          }
+        }
+      }
+    }
+
+    return null;
   }
 
   /**
    * Click the job card to open job details
    */
-  async clickJobCard(easyApplyButton) {
+  async clickJobCard(jobCard) {
     try {
-      const jobCard = easyApplyButton.closest('.job-card-container, .jobs-search-results__list-item, li');
-      if (jobCard) {
-        const titleLink = jobCard.querySelector('a.job-card-list__title, a.job-card-container__link');
+      // Look for the job title link
+      const titleLinkSelectors = [
+        'a.job-card-list__title',
+        'a.job-card-container__link',
+        'a.disabled-ember-view',
+        'a[data-control-name="job_card_title"]'
+      ];
+
+      for (const selector of titleLinkSelectors) {
+        const titleLink = jobCard.querySelector(selector);
         if (titleLink) {
+          log(`  Clicking job title link...`, 'info');
           await clickElement(titleLink, 500);
           return;
         }
       }
 
-      // Fallback: just click the button area
-      const rect = easyApplyButton.getBoundingClientRect();
-      const x = rect.left + rect.width / 2;
-      const y = rect.top + rect.height / 2;
-      document.elementFromPoint(x, y - 50)?.click();
+      // Fallback: click anywhere on the job card
+      log(`  Clicking job card directly...`, 'info');
+      await clickElement(jobCard, 500);
     } catch (e) {
-      log('Could not click job card', 'warn');
+      log(`⚠️  Error clicking job card: ${e.message}`, 'warn');
     }
   }
 
@@ -342,12 +528,15 @@ class LinkedInEasyApplyBot {
     this.updateStatus(`Applying to ${jobDetails.jobTitle}`);
 
     log(`Starting application for: ${jobDetails.jobTitle} at ${jobDetails.companyName}`, 'info');
+    this.addActivityLog(`Applying to ${jobDetails.jobTitle}...`);
 
     try {
       // Click Easy Apply button
+      this.addActivityLog('Clicking Easy Apply button...');
       await clickElement(button, 1000);
 
       // Wait for modal to appear
+      this.addActivityLog('Waiting for application form...');
       const modal = await waitForElement(SELECTORS.MODAL, 5000);
 
       if (!modal) {
@@ -355,11 +544,13 @@ class LinkedInEasyApplyBot {
       }
 
       // Process application form
+      this.addActivityLog('Filling application form...');
       const success = await this.processApplicationForm();
 
       if (success) {
         log('Application submitted successfully', 'success');
         showNotification(`Applied to ${jobDetails.jobTitle}`, 'success');
+        this.addActivityLog(`✅ Successfully applied!`, 'success');
 
         await Storage.addApplication({
           ...jobDetails,
@@ -371,6 +562,7 @@ class LinkedInEasyApplyBot {
     } catch (error) {
       log(`Application failed: ${error.message}`, 'error');
       showNotification('Application failed', 'error');
+      this.addActivityLog(`❌ Application failed: ${error.message}`, 'error');
 
       await Storage.addApplication({
         ...jobDetails,
