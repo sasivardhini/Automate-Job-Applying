@@ -186,8 +186,12 @@ const Storage = {
 
       // Compensation & Start Date
       'SALARY': profile.expectedSalary || '80000',
+      'HOURLY_RATE': '500', // Default hourly rate in INR
+      'CURRENT_CTC': '600000', // Default current CTC in INR (6 LPA)
+      'EXPECTED_CTC': '800000', // Default expected CTC in INR (8 LPA)
       'START_DATE': 'Immediately',
       'NOTICE_PERIOD': profile.noticePeriod || '2 weeks',
+      'NOTICE_PERIOD_STATUS': 'Left the job', // Default: already left
 
       // Location & Relocation
       'LOCATION': profile.jobLocation || '',

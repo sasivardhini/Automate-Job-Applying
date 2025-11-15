@@ -1205,6 +1205,10 @@ class LinkedInEasyApplyBot {
       'apply filters',
       'reset filters',
       'date posted',
+      'any time',
+      'past month',
+      'past week',
+      'past 24 hours',
       'experience level',
       'company',
       'job type',
@@ -1360,6 +1364,10 @@ class LinkedInEasyApplyBot {
       'apply filters',
       'reset filters',
       'date posted',
+      'any time',
+      'past month',
+      'past week',
+      'past 24 hours',
       'experience level',
       'company',
       'job type',
@@ -1726,10 +1734,25 @@ class LinkedInEasyApplyBot {
         value = this.profile.websiteUrl;
       } else if (lowerLabel.includes('city') || lowerLabel.includes('location') || lowerLabel.includes('address')) {
         value = this.profile.jobLocation || '';
-      } else if (fieldType === 'number' && lowerLabel.includes('year')) {
-        value = '5'; // Default years of experience
       } else if (fieldType === 'number') {
-        value = '0'; // Default for other number fields
+        // Smart defaults for number fields based on context
+        if (lowerLabel.includes('year')) {
+          value = this.profile.yearsExperience || '2';
+        } else if (lowerLabel.includes('hourly') || lowerLabel.includes('hour') && (lowerLabel.includes('rate') || lowerLabel.includes('expect'))) {
+          value = '500'; // Default hourly rate in INR
+        } else if (lowerLabel.includes('ctc') || lowerLabel.includes('salary') || lowerLabel.includes('compensation')) {
+          if (lowerLabel.includes('current')) {
+            value = '600000'; // Current CTC in INR
+          } else if (lowerLabel.includes('expect')) {
+            value = '800000'; // Expected CTC in INR
+          } else {
+            value = this.profile.expectedSalary || '80000';
+          }
+        } else if (lowerLabel.includes('month')) {
+          value = '6'; // Default months
+        } else {
+          value = '1'; // Default for other number fields (changed from 0 to 1)
+        }
       }
     }
 
@@ -1773,22 +1796,34 @@ class LinkedInEasyApplyBot {
       if (value) {
         log(`  Detected question type: ${questionType}, trying to select: "${value}"`, 'info');
 
-        // Try exact match first
+        // Try exact match first, then partial match
+        const valueToMatch = value.toLowerCase().trim();
         for (let i = 0; i < options.length; i++) {
           const optionText = (options[i].text || '').trim().toLowerCase();
-          const valueToMatch = value.toLowerCase();
+          const optionValue = (options[i].value || '').trim().toLowerCase();
 
-          if (optionText === valueToMatch || optionText.includes(valueToMatch) || valueToMatch.includes(optionText)) {
+          // AGGRESSIVE MATCHING: exact, contains, or partial word match
+          if (optionText === valueToMatch ||
+              optionValue === valueToMatch ||
+              optionText.includes(valueToMatch) ||
+              valueToMatch.includes(optionText) ||
+              optionValue.includes(valueToMatch)) {
             select.selectedIndex = i;
             select.value = options[i].value;
+
+            // Trigger ALL events to ensure LinkedIn recognizes
+            select.focus();
+            select.dispatchEvent(new Event('focus', { bubbles: true }));
             select.dispatchEvent(new Event('change', { bubbles: true }));
             select.dispatchEvent(new Event('input', { bubbles: true }));
             select.dispatchEvent(new Event('blur', { bubbles: true }));
+
             log(`  ✅ Selected matched option: "${options[i].text}"`, 'success');
-            await sleep(100);
+            await sleep(150);
             return;
           }
         }
+        log(`  ⚠️ No match found for "${value}", falling back...`, 'warn');
       }
     }
 
@@ -1833,7 +1868,37 @@ class LinkedInEasyApplyBot {
       return;
     }
 
-    log(`  ❌ ERROR: Could not find ANY valid option in dropdown!`, 'error');
+    // ULTRA-AGGRESSIVE FALLBACK: If no valid option found, select ANYTHING (even placeholder)
+    log(`  ⚠️ WARNING: No valid option found, selecting ANY option...`, 'error');
+    if (options.length > 1) {
+      // Select second option (skip first which is likely placeholder)
+      const fallbackOption = options[1];
+      select.selectedIndex = 1;
+      select.value = fallbackOption.value;
+
+      // Trigger ALL events
+      select.focus();
+      select.dispatchEvent(new Event('focus', { bubbles: true }));
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      select.dispatchEvent(new Event('input', { bubbles: true }));
+      select.dispatchEvent(new Event('blur', { bubbles: true }));
+
+      log(`  ⚠️ ULTRA-FALLBACK: Force-selected option: "${fallbackOption.text}"`, 'warn');
+      await sleep(150);
+      return;
+    } else if (options.length === 1) {
+      // Only one option available, select it
+      select.selectedIndex = 0;
+      select.value = options[0].value;
+      select.focus();
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      select.dispatchEvent(new Event('blur', { bubbles: true }));
+      log(`  ⚠️ ULTRA-FALLBACK: Selected only available option: "${options[0].text}"`, 'warn');
+      await sleep(150);
+      return;
+    }
+
+    log(`  ❌ ERROR: Dropdown has NO options at all!`, 'error');
   }
 
   /**

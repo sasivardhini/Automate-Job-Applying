@@ -37,8 +37,10 @@ const QUESTION_PATTERNS = {
   AUTHORIZATION: /authorized.*work|work.*authorization|legally.*work/i,
   SPONSORSHIP: /require.*sponsorship|sponsorship.*require|visa.*sponsor/i,
   SALARY: /salary.*expectation|expected.*salary|compensation|desired.*salary/i,
+  HOURLY_RATE: /hourly.*expectation|hourly.*rate|hourly.*salary|expected.*hourly|hour.*expectation|hourly.*INR|hourly.*USD/i,
   START_DATE: /start.*date|available.*start|when.*start|earliest.*start/i,
   NOTICE_PERIOD: /notice.*period|available.*notice/i,
+  NOTICE_PERIOD_STATUS: /serving.*notice|notice.*period.*left|left.*job|serving.*notice.*period/i,
   RELOCATION: /willing.*relocate|relocate|can you relocate|able to relocate/i,
   LOCATION: /location|city|where.*located/i,
   GENDER: /gender|sex/i,
@@ -61,7 +63,9 @@ const QUESTION_PATTERNS = {
   IIT_GRADUATE: /IIT|indian institute of technology|graduate.*IIT|current student.*IIT/i,
   COMFORTABLE_SCHEDULE: /comfortable.*schedule|comfortable.*hours|comfortable.*full-time|comfortable.*8 hours/i,
   PRIOR_EXPERIENCE: /prior.*experience|prior.*internship|previous.*experience|work experience/i,
-  INTERNSHIP_EXPERIENCE: /internship.*experience|any.*internship/i
+  INTERNSHIP_EXPERIENCE: /internship.*experience|any.*internship/i,
+  CURRENT_CTC: /current.*ctc|current.*compensation|present.*salary/i,
+  EXPECTED_CTC: /expected.*ctc|expected.*compensation|expecting.*salary/i
 };
 
 // Default settings
