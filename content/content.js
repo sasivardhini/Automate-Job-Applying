@@ -496,63 +496,169 @@ class LinkedInEasyApplyBot {
   }
 
   /**
-   * Handle "Save this application?" dialog
+   * Handle "Save this application?" dialog - ULTRA AGGRESSIVE VERSION
    */
   async handleSaveApplicationDialog() {
     // Check if the save dialog is present
     const pageText = document.body.textContent;
 
     if (pageText.includes('Save this application?') ||
-        pageText.includes('your application will be discarded')) {
-      log('Found "Save application" dialog - clicking Discard...', 'warn');
+        pageText.includes('your application will be discarded') ||
+        pageText.includes('Any uploaded files will not be saved')) {
 
-      // Look for Discard/Don't save button
-      const discardButtons = [
-        'Discard',
-        "Don't save",
-        'Do not save',
-        'Skip'
+      log('🚨 DETECTED "Save application" dialog - AGGRESSIVE HANDLING...', 'warn');
+
+      // Find ALL possible modals
+      const modalSelectors = [
+        '.artdeco-modal',
+        '[role="dialog"]',
+        '[data-test-modal]',
+        '.artdeco-modal-overlay',
+        'div[aria-labelledby]'
       ];
 
-      for (const text of discardButtons) {
-        const button = this.findButtonAdvanced([text]);
-        if (button) {
-          log(`Clicking "${text}" button to discard and continue...`, 'info');
-          await clickElement(button, 2000);
-          return true;
+      for (const selector of modalSelectors) {
+        const modals = document.querySelectorAll(selector);
+
+        for (const modal of modals) {
+          const modalText = modal.textContent || '';
+
+          // Check if this is the save dialog
+          if (modalText.includes('Save this application') ||
+              modalText.includes('your application will be discarded')) {
+
+            log('✅ Found save dialog modal!', 'info');
+
+            // Strategy 1: Look for Discard/Don't Save buttons
+            const allButtons = modal.querySelectorAll('button');
+            log(`Found ${allButtons.length} buttons in modal`, 'info');
+
+            // Check all buttons and log them
+            for (const button of allButtons) {
+              const btnText = (button.textContent || '').toLowerCase().trim();
+              const btnLabel = (button.getAttribute('aria-label') || '').toLowerCase();
+              const btnDataControl = button.getAttribute('data-control-name') || '';
+
+              log(`  Button: text="${btnText}" | label="${btnLabel}" | data-control="${btnDataControl}"`, 'info');
+
+              // Look for Discard/Don't Save with many variations
+              if (btnText.includes('discard') ||
+                  btnLabel.includes('discard') ||
+                  btnText.includes("don't save") ||
+                  btnText.includes('do not save') ||
+                  btnText.includes('dont save') ||
+                  btnText.includes('no') ||
+                  btnDataControl.includes('discard')) {
+
+                log(`🎯 Found DISCARD button: "${btnText}", clicking NOW...`, 'success');
+                button.click();
+                await sleep(500);
+                button.click(); // Double click for safety
+                await sleep(2000);
+                return true;
+              }
+            }
+
+            // Strategy 2: Click any SECONDARY button (not primary)
+            log('Strategy 2: Looking for secondary button...', 'warn');
+            for (const button of allButtons) {
+              const classes = button.className || '';
+              const btnText = (button.textContent || '').toLowerCase().trim();
+
+              // Skip "Save" buttons
+              if (btnText.includes('save')) {
+                log(`  Skipping Save button: "${btnText}"`, 'info');
+                continue;
+              }
+
+              // Click secondary buttons
+              if (classes.includes('secondary') || classes.includes('tertiary')) {
+                log(`🎯 Clicking secondary button: "${btnText}"`, 'success');
+                button.click();
+                await sleep(500);
+                button.click();
+                await sleep(2000);
+                return true;
+              }
+            }
+
+            // Strategy 3: Click the LAST button (often Discard/Cancel)
+            log('Strategy 3: Clicking last button in modal...', 'warn');
+            if (allButtons.length >= 2) {
+              const lastButton = allButtons[allButtons.length - 1];
+              const btnText = (lastButton.textContent || '').toLowerCase().trim();
+
+              // Only if it's not "Save"
+              if (!btnText.includes('save')) {
+                log(`🎯 Clicking last button: "${btnText}"`, 'success');
+                lastButton.click();
+                await sleep(500);
+                lastButton.click();
+                await sleep(2000);
+                return true;
+              }
+            }
+
+            // Strategy 4: Close button (X)
+            log('Strategy 4: Looking for close/dismiss button...', 'warn');
+            const closeSelectors = [
+              'button[aria-label*="Dismiss"]',
+              'button[aria-label*="dismiss"]',
+              'button[aria-label*="Close"]',
+              'button[aria-label*="close"]',
+              'button.artdeco-modal__dismiss',
+              'button[data-test-modal-close-btn]'
+            ];
+
+            for (const closeSelector of closeSelectors) {
+              const closeBtn = modal.querySelector(closeSelector);
+              if (closeBtn) {
+                log(`🎯 Clicking close button`, 'success');
+                closeBtn.click();
+                await sleep(500);
+                closeBtn.click();
+                await sleep(2000);
+                return true;
+              }
+            }
+          }
         }
       }
 
-      // If can't find discard, try to close the modal
-      const closeButton = document.querySelector('button[aria-label*="Dismiss"]');
-      if (closeButton) {
-        log('Clicking Dismiss to close save dialog...', 'info');
-        await clickElement(closeButton, 2000);
-        return true;
+      // Strategy 5: AGGRESSIVE ESC key (multiple times)
+      log('🚨 LAST RESORT: Pressing ESC multiple times...', 'warn');
+      for (let i = 0; i < 5; i++) {
+        document.dispatchEvent(new KeyboardEvent('keydown', {
+          key: 'Escape',
+          keyCode: 27,
+          which: 27,
+          bubbles: true,
+          cancelable: true
+        }));
+        await sleep(200);
       }
+      await sleep(1000);
+      return true;
     }
 
     return false;
   }
 
   /**
-   * Find safe action button (avoids clicking wrong buttons)
+   * Find safe action button (avoids clicking wrong buttons) - ULTRA STRICT
    */
   findSafeActionButton() {
-    const modal = document.querySelector('.jobs-easy-apply-modal, [data-test-modal]');
-    if (!modal) {
-      log('No modal found for safe button search', 'warn');
-      return null;
-    }
+    log('🔍 Looking for safe action button...', 'info');
 
-    const buttons = modal.querySelectorAll('button');
-    // EXPANDED avoid list - same as findButtonAdvanced
+    // ULTRA STRICT avoid list - same as findButtonAdvanced
     const avoidTexts = [
       'save',
+      'saved',
       'preferences',
       'preference',
       'match',
       'matching',
+      'matches',
       'cancel',
       'close',
       'back',
@@ -564,18 +670,53 @@ class LinkedInEasyApplyBot {
       'sort',
       'view',
       'see',
-      'show'
+      'show',
+      'salary',
+      'remote',
+      'full-time',
+      'part-time',
+      'hybrid'
     ];
+
+    // Only search in modal footer (most restrictive)
+    const footerSelectors = [
+      '.jobs-easy-apply-modal__footer',
+      '.artdeco-modal__footer',
+      '[data-test-modal-footer]'
+    ];
+
+    let footer = null;
+    for (const selector of footerSelectors) {
+      footer = document.querySelector(selector);
+      if (footer) break;
+    }
+
+    // Fallback to full modal
+    if (!footer) {
+      footer = document.querySelector('.jobs-easy-apply-modal, [data-test-modal], .artdeco-modal');
+    }
+
+    if (!footer) {
+      log('🚫 No modal found for safe button search', 'error');
+      return null;
+    }
+
+    const buttons = footer.querySelectorAll('button');
+    log(`Found ${buttons.length} buttons in modal`, 'info');
 
     // Try to find primary button first
     for (const button of buttons) {
       if (button.disabled) continue;
 
-      const buttonText = (button.textContent || button.getAttribute('aria-label') || '').toLowerCase().trim();
+      const buttonText = (button.textContent || '').toLowerCase().trim();
+      const buttonLabel = (button.getAttribute('aria-label') || '').toLowerCase().trim();
+      const combinedText = `${buttonText} ${buttonLabel}`;
 
-      // Skip buttons we want to avoid
-      if (avoidTexts.some(avoid => buttonText.includes(avoid))) {
-        log(`Skipping unsafe button: "${buttonText}"`, 'warn');
+      log(`  Checking button: "${buttonText}"`, 'info');
+
+      // STRICT: Skip buttons we want to avoid
+      if (avoidTexts.some(avoid => combinedText.includes(avoid))) {
+        log(`    ❌ SKIPPING unsafe button: "${buttonText}"`, 'warn');
         continue;
       }
 
@@ -584,7 +725,7 @@ class LinkedInEasyApplyBot {
       if (style.display !== 'none' && style.visibility !== 'hidden') {
         // Prefer primary buttons
         if (button.classList.contains('artdeco-button--primary')) {
-          log(`Found safe primary button: "${buttonText}"`, 'info');
+          log(`    ✅ Found safe primary button: "${buttonText}"`, 'success');
           return button;
         }
       }
@@ -594,20 +735,22 @@ class LinkedInEasyApplyBot {
     for (const button of buttons) {
       if (button.disabled) continue;
 
-      const buttonText = (button.textContent || button.getAttribute('aria-label') || '').toLowerCase().trim();
+      const buttonText = (button.textContent || '').toLowerCase().trim();
+      const buttonLabel = (button.getAttribute('aria-label') || '').toLowerCase().trim();
+      const combinedText = `${buttonText} ${buttonLabel}`;
 
-      if (avoidTexts.some(avoid => buttonText.includes(avoid))) {
+      if (avoidTexts.some(avoid => combinedText.includes(avoid))) {
         continue;
       }
 
       const style = window.getComputedStyle(button);
       if (style.display !== 'none' && style.visibility !== 'hidden') {
-        log(`Found safe button: "${buttonText}"`, 'info');
+        log(`    ✅ Found safe button: "${buttonText}"`, 'success');
         return button;
       }
     }
 
-    log('No safe button found', 'warn');
+    log('❌ No safe button found', 'warn');
     return null;
   }
 
@@ -639,16 +782,20 @@ class LinkedInEasyApplyBot {
   }
 
   /**
-   * Find buttons with advanced logic (IMPROVED - avoids wrong buttons)
+   * Find buttons with advanced logic - ULTRA STRICT (avoids wrong buttons)
    */
   findButtonAdvanced(textOptions) {
-    // Words to STRICTLY avoid in buttons - EXPANDED LIST
+    log(`🔍 Searching for buttons: ${textOptions.join(', ')}`, 'info');
+
+    // ULTRA STRICT avoid list - expanded with more variations
     const avoidWords = [
       'preferences',
       'preference',
       'match',
       'matching',
+      'matches',
       'save',
+      'saved',
       'cancel',
       'back',
       'dismiss',
@@ -659,44 +806,101 @@ class LinkedInEasyApplyBot {
       'sort',
       'view',
       'see',
-      'show'
+      'show',
+      'salary',
+      'remote',
+      'full-time',
+      'part-time',
+      'hybrid'
     ];
 
-    // Only search within the Easy Apply modal (STRICT)
-    const modal = document.querySelector('.jobs-easy-apply-modal, [data-test-modal], .artdeco-modal');
+    // CRITICAL: Only search within Easy Apply modal footer/actions
+    // This is even more restrictive to avoid page-level buttons
+    const modalFooterSelectors = [
+      '.jobs-easy-apply-modal__footer',
+      '.jobs-easy-apply-modal footer',
+      '.artdeco-modal__footer',
+      '.artdeco-modal footer',
+      '[data-test-modal-footer]'
+    ];
 
-    // If no modal, don't search at all to avoid clicking wrong buttons
-    if (!modal) {
-      log('No Easy Apply modal found, skipping button search', 'warn');
+    let searchContainer = null;
+
+    // Try to find modal footer first (most restrictive)
+    for (const selector of modalFooterSelectors) {
+      searchContainer = document.querySelector(selector);
+      if (searchContainer) {
+        log(`Found modal footer: ${selector}`, 'info');
+        break;
+      }
+    }
+
+    // Fallback to full modal
+    if (!searchContainer) {
+      const modalSelectors = [
+        '.jobs-easy-apply-modal',
+        '[data-test-modal="jobs-easy-apply-modal"]',
+        '.artdeco-modal[role="dialog"]'
+      ];
+
+      for (const selector of modalSelectors) {
+        searchContainer = document.querySelector(selector);
+        if (searchContainer) {
+          log(`Found modal: ${selector}`, 'info');
+          break;
+        }
+      }
+    }
+
+    // CRITICAL: If no modal found, DO NOT search - prevents wrong clicks
+    if (!searchContainer) {
+      log('🚫 NO MODAL FOUND - Refusing to search to prevent wrong clicks!', 'error');
       return null;
     }
 
-    const allButtons = modal.querySelectorAll('button, [role="button"], input[type="submit"]');
+    // Get all buttons in the container
+    const allButtons = searchContainer.querySelectorAll('button, [role="button"], input[type="submit"]');
+    log(`Found ${allButtons.length} buttons in container`, 'info');
 
+    // Check each button
     for (const button of allButtons) {
-      const buttonText = (button.textContent || button.getAttribute('aria-label') || button.value || '').toLowerCase().trim();
+      const buttonText = (button.textContent || '').toLowerCase().trim();
+      const buttonLabel = (button.getAttribute('aria-label') || '').toLowerCase().trim();
+      const buttonDataControl = (button.getAttribute('data-control-name') || '').toLowerCase();
+      const combinedText = `${buttonText} ${buttonLabel} ${buttonDataControl}`;
 
-      // STRICT: Skip if button contains ANY avoid words
-      const shouldAvoid = avoidWords.some(word => buttonText.includes(word));
+      log(`  Checking button: "${buttonText}" | aria-label="${buttonLabel}"`, 'info');
+
+      // ULTRA STRICT: Skip if button contains ANY avoid words
+      const shouldAvoid = avoidWords.some(word => combinedText.includes(word));
       if (shouldAvoid) {
-        log(`Skipping button with avoided word: "${buttonText}"`, 'warn');
+        log(`    ❌ SKIPPING - Contains avoided word: "${buttonText}"`, 'warn');
+        continue;
+      }
+
+      // ULTRA STRICT: Skip buttons that are in sidebars/headers (not in modal body/footer)
+      const buttonParent = button.closest('[class*="sidebar"], [class*="header"], [class*="nav"]');
+      if (buttonParent && !buttonParent.closest('.jobs-easy-apply-modal')) {
+        log(`    ❌ SKIPPING - Button is in sidebar/header: "${buttonText}"`, 'warn');
         continue;
       }
 
       // Check if this button matches what we're looking for
-      for (const text of textOptions) {
-        if (buttonText.includes(text.toLowerCase())) {
-          // Make sure it's visible and not disabled
+      for (const searchText of textOptions) {
+        if (combinedText.includes(searchText.toLowerCase())) {
+          // Make sure it's visible and enabled
           const style = window.getComputedStyle(button);
           if (style.display !== 'none' && style.visibility !== 'hidden' && !button.disabled) {
-            log(`✅ Found button: "${buttonText}" for search: "${text}"`, 'success');
+            log(`    ✅ FOUND MATCHING BUTTON: "${buttonText}" for "${searchText}"`, 'success');
             return button;
+          } else {
+            log(`    ⚠️  Button matches but is hidden/disabled: "${buttonText}"`, 'warn');
           }
         }
       }
     }
 
-    log(`No button found for: ${textOptions.join(', ')}`, 'warn');
+    log(`❌ No button found for: ${textOptions.join(', ')}`, 'warn');
     return null;
   }
 
