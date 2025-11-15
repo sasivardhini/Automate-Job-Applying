@@ -30,22 +30,34 @@ const SELECTORS = {
   ALL_INPUTS: 'input, select, textarea'
 };
 
-// Common question patterns
+// Common question patterns - COMPREHENSIVE
 const QUESTION_PATTERNS = {
-  YEARS_EXPERIENCE: /years.*experience|experience.*years/i,
+  YEARS_EXPERIENCE: /years.*experience|experience.*years|how many years/i,
+  TECH_EXPERIENCE: /years.*experience.*with|experience.*with|worked with/i,
   AUTHORIZATION: /authorized.*work|work.*authorization|legally.*work/i,
   SPONSORSHIP: /require.*sponsorship|sponsorship.*require|visa.*sponsor/i,
-  SALARY: /salary.*expectation|expected.*salary|compensation/i,
-  START_DATE: /start.*date|available.*start|when.*start/i,
+  SALARY: /salary.*expectation|expected.*salary|compensation|desired.*salary/i,
+  START_DATE: /start.*date|available.*start|when.*start|earliest.*start/i,
   NOTICE_PERIOD: /notice.*period|available.*notice/i,
-  LOCATION: /willing.*relocate|relocate|location/i,
+  RELOCATION: /willing.*relocate|relocate|can you relocate|able to relocate/i,
+  LOCATION: /location|city|where.*located/i,
   GENDER: /gender|sex/i,
   RACE: /race|ethnicity/i,
   VETERAN: /veteran/i,
   DISABILITY: /disability|disabled/i,
   LINKEDIN_URL: /linkedin.*url|linkedin.*profile/i,
   WEBSITE: /website|portfolio|github/i,
-  COVER_LETTER: /cover.*letter/i
+  COVER_LETTER: /cover.*letter/i,
+  WHY_WORK: /why.*work|why.*join|why.*interested/i,
+  REFERRAL: /referred|referral|how.*hear/i,
+  CITIZENSHIP: /citizen|citizenship/i,
+  DEGREE: /degree|education|qualification/i,
+  GRADUATION: /graduation.*date|when.*graduate|graduated/i,
+  CERTIFICATIONS: /certification|certified|license/i,
+  CLEARANCE: /security.*clearance|clearance/i,
+  CURRENT_EMPLOYER: /current.*employer|currently.*work/i,
+  MANAGE_TEAM: /manage.*team|team.*size|people.*manage/i,
+  REMOTE_WORK: /remote.*work|work.*remote|work.*home/i
 };
 
 // Default settings

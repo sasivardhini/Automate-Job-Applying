@@ -171,16 +171,49 @@ const Storage = {
       return commonAnswers[questionType];
     }
 
-    // Fallback to profile data
+    // COMPREHENSIVE answer map with smart defaults
     const answerMap = {
-      'YEARS_EXPERIENCE': profile.yearsExperience,
-      'AUTHORIZATION': profile.workAuthorization,
-      'SPONSORSHIP': profile.requireSponsorship,
-      'SALARY': profile.expectedSalary,
-      'NOTICE_PERIOD': profile.noticePeriod,
-      'LOCATION': profile.willingToRelocate,
-      'LINKEDIN_URL': profile.linkedinUrl,
-      'WEBSITE': profile.websiteUrl
+      // Work Experience
+      'YEARS_EXPERIENCE': profile.yearsExperience || '5',
+      'TECH_EXPERIENCE': '2', // Default 2 years with any technology
+
+      // Authorization & Sponsorship
+      'AUTHORIZATION': profile.workAuthorization || 'Yes',
+      'SPONSORSHIP': profile.requireSponsorship || 'No',
+      'CITIZENSHIP': 'Yes',
+
+      // Compensation & Start Date
+      'SALARY': profile.expectedSalary || '80000',
+      'START_DATE': 'Immediately',
+      'NOTICE_PERIOD': profile.noticePeriod || '2 weeks',
+
+      // Location & Relocation
+      'LOCATION': profile.jobLocation || '',
+      'RELOCATION': 'Yes', // Always say yes to relocation
+      'REMOTE_WORK': 'Yes',
+
+      // Personal Info
+      'LINKEDIN_URL': profile.linkedinUrl || '',
+      'WEBSITE': profile.websiteUrl || '',
+      'GENDER': 'Prefer not to say',
+      'RACE': 'Prefer not to say',
+      'VETERAN': 'No',
+      'DISABILITY': 'No',
+      'CLEARANCE': 'None',
+
+      // Education
+      'DEGREE': 'Bachelor\'s Degree',
+      'GRADUATION': '2020',
+      'CERTIFICATIONS': 'None',
+
+      // Work Details
+      'CURRENT_EMPLOYER': 'Confidential',
+      'MANAGE_TEAM': '0',
+
+      // Open-ended questions
+      'WHY_WORK': 'I am excited about this opportunity and believe my skills align well with your requirements.',
+      'REFERRAL': 'LinkedIn',
+      'COVER_LETTER': 'I am very interested in this position and believe I would be a great fit for your team.'
     };
 
     return answerMap[questionType] || '';

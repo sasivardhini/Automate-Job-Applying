@@ -1265,34 +1265,97 @@ class LinkedInEasyApplyBot {
   }
 
   /**
-   * Fill field with intelligent fallback values
+   * Fill field with intelligent fallback values - ENHANCED
    */
   async fillFieldIntelligent(field) {
-    const label = getFieldLabel(field);
-    log(`Intelligently filling required field: ${label}`, 'info');
+    const label = getFieldLabel(field) || field.name || '';
+    const fieldType = field.tagName.toLowerCase();
+    log(`🔧 Intelligently filling required field: ${label} (${fieldType})`, 'info');
 
     // Try normal fill first
-    await this.fillField(field);
+    if (fieldType === 'textarea') {
+      await this.fillTextarea(field);
+    } else if (fieldType === 'select') {
+      await this.fillSelect(field);
+    } else {
+      await this.fillField(field);
+    }
 
-    // If still empty, use fallback values
+    // If still empty after trying to fill, use aggressive fallbacks
     if (!field.value || field.value.trim() === '') {
-      const tagName = field.tagName.toLowerCase();
+      log(`  ⚠️  Field still empty, using aggressive fallback...`, 'warn');
 
-      if (tagName === 'select') {
+      if (fieldType === 'select') {
         // Select first non-empty option
         const options = Array.from(field.options);
-        const validOption = options.find(opt => opt.value && opt.value !== '' && opt.value !== 'Select');
-        if (validOption) {
-          field.value = validOption.value;
-          field.dispatchEvent(new Event('change', { bubbles: true }));
+        for (const opt of options) {
+          if (opt.value && opt.value !== '' && opt.value !== 'Select') {
+            field.value = opt.value;
+            field.selectedIndex = opt.index;
+            field.dispatchEvent(new Event('change', { bubbles: true }));
+            log(`  ✅ Auto-selected: "${opt.text}"`, 'success');
+            return true;
+          }
         }
       } else if (field.type === 'number') {
-        field.value = '0';
+        const lowerLabel = label.toLowerCase();
+        if (lowerLabel.includes('year') || lowerLabel.includes('experience')) {
+          field.value = '2';
+        } else {
+          field.value = '0';
+        }
         field.dispatchEvent(new Event('input', { bubbles: true }));
+        log(`  ✅ Filled number field with: ${field.value}`, 'success');
+        return true;
+      } else if (fieldType === 'textarea') {
+        field.value = 'I am very interested in this position and believe my skills and experience make me a strong candidate for this role.';
+        field.dispatchEvent(new Event('input', { bubbles: true }));
+        log(`  ✅ Filled textarea with default text`, 'success');
+        return true;
       } else {
         field.value = 'N/A';
         field.dispatchEvent(new Event('input', { bubbles: true }));
+        log(`  ✅ Filled with: "N/A"`, 'success');
+        return true;
       }
+    }
+
+    return true;
+  }
+
+  /**
+   * Fill textarea (for essay/paragraph questions)
+   */
+  async fillTextarea(textarea) {
+    const label = getFieldLabel(textarea) || '';
+    log(`📝 Filling textarea: ${label}`, 'info');
+
+    // Detect question type
+    const questionType = detectQuestionType(label);
+    let value = '';
+
+    if (questionType) {
+      value = await Storage.getAnswerForQuestion(questionType, this.profile);
+    }
+
+    // If no specific answer, use a generic professional response
+    if (!value) {
+      const lowerLabel = label.toLowerCase();
+
+      if (lowerLabel.includes('why') && lowerLabel.includes('work')) {
+        value = 'I am excited about this opportunity and believe my skills and experience align well with your team\'s needs. I am eager to contribute to your company\'s success.';
+      } else if (lowerLabel.includes('cover letter')) {
+        value = 'I am writing to express my strong interest in this position. With my background and skills, I am confident I would be a valuable addition to your team. I look forward to the opportunity to discuss how I can contribute to your organization.';
+      } else if (lowerLabel.includes('about yourself') || lowerLabel.includes('tell us about')) {
+        value = `I am a dedicated professional with ${this.profile.yearsExperience || '5'} years of experience. I am passionate about my work and committed to delivering high-quality results.`;
+      } else {
+        value = 'I am very interested in this position and believe my skills and experience make me a strong candidate for this role.';
+      }
+    }
+
+    if (value) {
+      await fillInput(textarea, value);
+      log(`  ✅ Filled textarea`, 'success');
     }
   }
 
@@ -1335,11 +1398,14 @@ class LinkedInEasyApplyBot {
         } else if (inputType === 'checkbox') {
           // Handle checkboxes
           await this.fillCheckbox(field);
+        } else if (fieldType === 'textarea') {
+          // Handle textarea (essay questions)
+          await this.fillTextarea(field);
         } else if (fieldType === 'select') {
           // Handle dropdowns
           await this.fillSelect(field);
         } else {
-          // Handle text inputs, email, phone, etc.
+          // Handle text inputs, email, phone, number, etc.
           await this.fillField(field);
         }
 
