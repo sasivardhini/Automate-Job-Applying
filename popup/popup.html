@@ -83,32 +83,32 @@
           <div class="form-row">
             <div class="form-group">
               <label for="firstName">First Name *</label>
-              <input type="text" id="firstName" name="firstName" required>
+              <input type="text" id="firstName" name="firstName" value="Sasivardhini" required>
             </div>
             <div class="form-group">
               <label for="lastName">Last Name *</label>
-              <input type="text" id="lastName" name="lastName" required>
+              <input type="text" id="lastName" name="lastName" value="S" required>
             </div>
           </div>
 
           <div class="form-group">
             <label for="email">Email *</label>
-            <input type="email" id="email" name="email" required>
+            <input type="email" id="email" name="email" value="sasivardhinisrinivasan@gmail.com" required>
           </div>
 
           <div class="form-group">
             <label for="phone">Phone Number *</label>
-            <input type="tel" id="phone" name="phone" required>
+            <input type="tel" id="phone" name="phone" value="9345190806" required>
           </div>
 
           <div class="form-group">
             <label for="linkedinUrl">LinkedIn URL</label>
-            <input type="url" id="linkedinUrl" name="linkedinUrl" placeholder="https://linkedin.com/in/yourprofile">
+            <input type="url" id="linkedinUrl" name="linkedinUrl" value="https://linkedin.com/in/yourprofile" placeholder="https://linkedin.com/in/yourprofile">
           </div>
 
           <div class="form-group">
             <label for="websiteUrl">Website/Portfolio URL</label>
-            <input type="url" id="websiteUrl" name="websiteUrl" placeholder="https://yourwebsite.com">
+            <input type="url" id="websiteUrl" name="websiteUrl" value="https://yourwebsite.com" placeholder="https://yourwebsite.com">
           </div>
         </div>
 
@@ -117,7 +117,7 @@
 
           <div class="form-group">
             <label for="yearsExperience">Years of Experience *</label>
-            <input type="number" id="yearsExperience" name="yearsExperience" min="0" max="50" required>
+            <input type="number" id="yearsExperience" name="yearsExperience" min="0" max="50" value="1" required>
             <small>This is commonly asked in applications</small>
           </div>
 
@@ -126,7 +126,7 @@
             <select id="workAuthorization" name="workAuthorization" required>
               <option value="">Select...</option>
               <option value="Yes">Yes, I am authorized to work</option>
-              <option value="No">No, I am not authorized</option>
+              <option value="No" selected>No, I am not authorized</option>
               <option value="US Citizen">US Citizen</option>
               <option value="Green Card">Green Card Holder</option>
               <option value="H1B">H1B Visa</option>
@@ -138,7 +138,7 @@
             <label for="requireSponsorship">Require Sponsorship *</label>
             <select id="requireSponsorship" name="requireSponsorship" required>
               <option value="">Select...</option>
-              <option value="Yes">Yes</option>
+              <option value="Yes" selected>Yes</option>
               <option value="No">No</option>
             </select>
             <small>Required for most job applications</small>
@@ -169,7 +169,7 @@
 
           <div class="form-group">
             <label for="jobTitle">Job Title / Keywords *</label>
-            <input type="text" id="jobTitle" name="jobTitle" placeholder="e.g., Software Engineer, Data Analyst" required>
+            <input type="text" id="jobTitle" name="jobTitle" value="Data Engineer" placeholder="e.g., Software Engineer, Data Analyst" required>
             <small>The bot will search for jobs with these keywords</small>
           </div>
 
@@ -183,7 +183,7 @@
             <label for="jobType">Job Type</label>
             <select id="jobType" name="jobType">
               <option value="">Any</option>
-              <option value="remote">Remote</option>
+              <option value="remote" selected>Remote</option>
               <option value="on-site">On-site</option>
               <option value="hybrid">Hybrid</option>
             </select>
