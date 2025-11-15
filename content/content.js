@@ -69,6 +69,10 @@ class LinkedInEasyApplyBot {
   addControlPanel() {
     const panel = document.createElement('div');
     panel.id = 'easy-apply-control-panel';
+
+    // Check if profile is complete
+    const profileComplete = this.profile.jobTitle && this.profile.jobTitle.trim() !== '';
+
     panel.innerHTML = `
       <div class="easy-apply-panel-header">
         <span>🤖 Easy Apply Bot</span>
@@ -77,6 +81,17 @@ class LinkedInEasyApplyBot {
         </button>
       </div>
       <div class="easy-apply-panel-body">
+        ${!profileComplete ? `
+          <div class="easy-apply-steps">
+            <strong>📋 Quick Steps:</strong>
+            <ol class="steps-list">
+              <li>Click extension icon</li>
+              <li>Fill "Job Title" field</li>
+              <li>Save your profile</li>
+              <li>Click "Search & Apply" below</li>
+            </ol>
+          </div>
+        ` : ''}
         <div class="easy-apply-status">
           <strong>Status:</strong> <span id="easy-apply-status">Idle</span>
         </div>
@@ -128,6 +143,10 @@ class LinkedInEasyApplyBot {
    */
   async searchAndApply() {
     log('Search & Apply clicked', 'info');
+
+    // RELOAD profile to get latest data
+    await this.loadData();
+    log(`Profile reloaded: Job Title = "${this.profile.jobTitle}"`, 'info');
 
     // Check if profile has job title
     if (!this.profile.jobTitle || this.profile.jobTitle.trim() === '') {
@@ -439,9 +458,19 @@ class LinkedInEasyApplyBot {
       log(`✅ Found Easy Apply button! Starting application...`, 'success');
       this.addActivityLog('Found Easy Apply! Starting...', 'success');
 
-      // Apply to this job
-      await this.applyToJob(easyApplyButton, jobDetails);
-      return true;
+      // Apply to this job (returns true if successful)
+      const applied = await this.applyToJob(easyApplyButton, jobDetails);
+
+      if (applied) {
+        // Successfully applied, return to trigger delay before next job
+        return true;
+      } else {
+        // Failed to apply, continue to next job
+        log('⚠️  Application failed, continuing to next job...', 'warn');
+        this.addActivityLog('Failed, trying next job...', 'warn');
+        await sleep(2000); // Brief delay before next attempt
+        continue;
+      }
     }
 
     log('No more jobs to apply to', 'warn');
@@ -596,7 +625,7 @@ class LinkedInEasyApplyBot {
    * Apply to a job
    */
   async applyToJob(button, jobDetails) {
-    if (this.applicationInProgress) return;
+    if (this.applicationInProgress) return false;
 
     this.applicationInProgress = true;
     this.currentJobId = jobDetails.jobId;
@@ -604,6 +633,8 @@ class LinkedInEasyApplyBot {
 
     log(`Starting application for: ${jobDetails.jobTitle} at ${jobDetails.companyName}`, 'info');
     this.addActivityLog(`Applying to ${jobDetails.jobTitle}...`);
+
+    let applicationSuccess = false;
 
     try {
       // Click Easy Apply button
@@ -623,7 +654,7 @@ class LinkedInEasyApplyBot {
       const success = await this.processApplicationForm();
 
       if (success) {
-        log('Application submitted successfully', 'success');
+        log('✅ Application submitted successfully!', 'success');
         showNotification(`Applied to ${jobDetails.jobTitle}`, 'success');
         this.addActivityLog(`✅ Successfully applied!`, 'success');
 
@@ -631,27 +662,33 @@ class LinkedInEasyApplyBot {
           ...jobDetails,
           status: APPLICATION_STATUS.APPLIED
         });
+
+        applicationSuccess = true;
       } else {
         throw new Error('Application process failed');
       }
     } catch (error) {
-      log(`Application failed: ${error.message}`, 'error');
-      showNotification('Application failed', 'error');
-      this.addActivityLog(`❌ Application failed: ${error.message}`, 'error');
+      log(`❌ Application failed: ${error.message}`, 'error');
+      showNotification(`Failed: ${error.message}`, 'error');
+      this.addActivityLog(`❌ Failed: ${error.message}`, 'error');
 
       await Storage.addApplication({
         ...jobDetails,
         status: APPLICATION_STATUS.FAILED,
         error: error.message
       });
+
+      applicationSuccess = false;
     } finally {
       this.applicationInProgress = false;
       this.currentJobId = null;
       this.updateStatus(this.settings.autoApply ? 'Running' : 'Idle');
 
       // Close modal if still open
-      this.closeModal();
+      await this.closeModal();
     }
+
+    return applicationSuccess;
   }
 
   /**
@@ -1316,16 +1353,28 @@ class LinkedInEasyApplyBot {
   }
 
   /**
-   * Fill a form field based on its label
+   * Fill a form field based on its label - ADVANCED VERSION
    */
   async fillField(field) {
     const label = getFieldLabel(field);
-    if (!label) return;
+    const fieldType = field.type || 'text';
+    const fieldName = field.name || '';
 
-    log(`Filling field: ${label}`, 'info');
+    if (!label && !fieldName) {
+      log('  ⚠️  No label or name for field, skipping...', 'warn');
+      return;
+    }
+
+    log(`📝 Filling field: ${label || fieldName} (type: ${fieldType})`, 'info');
+
+    // Skip if already filled (except for hidden fields)
+    if (field.value && field.value.trim() !== '' && fieldType !== 'hidden') {
+      log(`  ✓ Already filled: "${field.value}"`, 'info');
+      return;
+    }
 
     // Detect question type
-    const questionType = detectQuestionType(label);
+    const questionType = detectQuestionType(label || fieldName);
 
     let value = '';
 
@@ -1334,45 +1383,103 @@ class LinkedInEasyApplyBot {
     }
 
     // Field-specific mappings
-    const lowerLabel = label.toLowerCase();
+    const lowerLabel = (label || fieldName).toLowerCase();
 
     if (!value) {
-      if (lowerLabel.includes('first name') || lowerLabel.includes('firstname')) {
+      if (lowerLabel.includes('first name') || lowerLabel.includes('firstname') || lowerLabel.includes('given name')) {
         value = this.profile.firstName;
-      } else if (lowerLabel.includes('last name') || lowerLabel.includes('lastname')) {
+      } else if (lowerLabel.includes('last name') || lowerLabel.includes('lastname') || lowerLabel.includes('family name') || lowerLabel.includes('surname')) {
         value = this.profile.lastName;
+      } else if (lowerLabel.includes('full name') || lowerLabel.includes('name') && !lowerLabel.includes('company')) {
+        value = `${this.profile.firstName} ${this.profile.lastName}`;
       } else if (lowerLabel.includes('email')) {
         value = this.profile.email;
-      } else if (lowerLabel.includes('phone') || lowerLabel.includes('mobile')) {
+      } else if (lowerLabel.includes('phone') || lowerLabel.includes('mobile') || lowerLabel.includes('telephone')) {
         value = this.profile.phone;
       } else if (lowerLabel.includes('linkedin')) {
         value = this.profile.linkedinUrl;
-      } else if (lowerLabel.includes('website') || lowerLabel.includes('portfolio')) {
+      } else if (lowerLabel.includes('website') || lowerLabel.includes('portfolio') || lowerLabel.includes('url')) {
         value = this.profile.websiteUrl;
+      } else if (lowerLabel.includes('city') || lowerLabel.includes('location') || lowerLabel.includes('address')) {
+        value = this.profile.jobLocation || '';
+      } else if (fieldType === 'number' && lowerLabel.includes('year')) {
+        value = '5'; // Default years of experience
+      } else if (fieldType === 'number') {
+        value = '0'; // Default for other number fields
       }
     }
 
     if (value) {
       await fillInput(field, value);
+      log(`  ✅ Filled with: "${value}"`, 'success');
+    } else {
+      log(`  ⚠️  No value found for field: ${label || fieldName}`, 'warn');
     }
   }
 
   /**
-   * Fill select dropdown
+   * Fill select dropdown - ADVANCED VERSION
    */
   async fillSelect(select) {
     const label = getFieldLabel(select);
-    if (!label) return;
+    if (!label) {
+      log('  ⚠️  No label found for select, trying to fill anyway...', 'warn');
+    }
 
-    log(`Filling select: ${label}`, 'info');
+    log(`📝 Filling dropdown: ${label || 'unlabeled'}`, 'info');
 
-    const questionType = detectQuestionType(label);
+    const options = Array.from(select.options);
+    log(`  Found ${options.length} options`, 'info');
+
+    // Skip if already selected (not the placeholder)
+    if (select.value && select.value !== '' && select.value !== 'Select' && select.selectedIndex > 0) {
+      log(`  ✓ Already selected: "${select.options[select.selectedIndex].text}"`, 'info');
+      return;
+    }
+
+    // Try to match based on question type
+    const questionType = detectQuestionType(label || '');
     if (questionType) {
       const value = await Storage.getAnswerForQuestion(questionType, this.profile);
       if (value) {
-        await selectOption(select, value);
+        log(`  Trying to select: "${value}"`, 'info');
+        const selected = await selectOption(select, value);
+        if (selected) {
+          log(`  ✅ Selected: "${value}"`, 'success');
+          return;
+        }
       }
     }
+
+    // Fallback: Select first non-empty, non-placeholder option
+    for (let i = 0; i < options.length; i++) {
+      const option = options[i];
+      const optionText = (option.text || '').trim().toLowerCase();
+      const optionValue = (option.value || '').trim();
+
+      // Skip placeholder options
+      if (!optionValue ||
+          optionValue === '' ||
+          optionValue === 'Select' ||
+          optionText === 'select' ||
+          optionText === 'select an option' ||
+          optionText === 'choose' ||
+          optionText === 'please select' ||
+          optionText === '--') {
+        continue;
+      }
+
+      // Select this option
+      select.selectedIndex = i;
+      select.value = optionValue;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      select.dispatchEvent(new Event('input', { bubbles: true }));
+      log(`  ✅ Auto-selected: "${option.text}"`, 'success');
+      await sleep(100);
+      return;
+    }
+
+    log(`  ⚠️  Could not select any option for dropdown`, 'warn');
   }
 
   /**
