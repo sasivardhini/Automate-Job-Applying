@@ -116,13 +116,14 @@
           <h3>Common Questions</h3>
 
           <div class="form-group">
-            <label for="yearsExperience">Years of Experience</label>
-            <input type="number" id="yearsExperience" name="yearsExperience" min="0" max="50">
+            <label for="yearsExperience">Years of Experience *</label>
+            <input type="number" id="yearsExperience" name="yearsExperience" min="0" max="50" required>
+            <small>This is commonly asked in applications</small>
           </div>
 
           <div class="form-group">
-            <label for="workAuthorization">Work Authorization</label>
-            <select id="workAuthorization" name="workAuthorization">
+            <label for="workAuthorization">Work Authorization *</label>
+            <select id="workAuthorization" name="workAuthorization" required>
               <option value="">Select...</option>
               <option value="Yes">Yes, I am authorized to work</option>
               <option value="No">No, I am not authorized</option>
@@ -130,15 +131,17 @@
               <option value="Green Card">Green Card Holder</option>
               <option value="H1B">H1B Visa</option>
             </select>
+            <small>Required for most job applications</small>
           </div>
 
           <div class="form-group">
-            <label for="requireSponsorship">Require Sponsorship</label>
-            <select id="requireSponsorship" name="requireSponsorship">
+            <label for="requireSponsorship">Require Sponsorship *</label>
+            <select id="requireSponsorship" name="requireSponsorship" required>
               <option value="">Select...</option>
               <option value="Yes">Yes</option>
               <option value="No">No</option>
             </select>
+            <small>Required for most job applications</small>
           </div>
 
           <div class="form-group">
