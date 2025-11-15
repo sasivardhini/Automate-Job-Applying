@@ -806,6 +806,47 @@ class LinkedInEasyApplyBot {
     // Check if the save dialog is present
     const pageText = document.body.textContent;
 
+    // CRITICAL: Handle "Remove from your application?" dialog - NEVER click Remove!
+    if (pageText.includes('Remove from your application?') ||
+        pageText.includes('This will not affect your LinkedIn profile')) {
+
+      log('🚨 DETECTED "Remove from application" dialog - clicking CANCEL!', 'warn');
+
+      const modals = document.querySelectorAll('.artdeco-modal, [role="dialog"]');
+
+      for (const modal of modals) {
+        const modalText = modal.textContent || '';
+
+        if (modalText.includes('Remove from your application')) {
+          const allButtons = modal.querySelectorAll('button');
+
+          for (const button of allButtons) {
+            const btnText = (button.textContent || '').toLowerCase().trim();
+
+            // Click CANCEL, not Remove
+            if (btnText.includes('cancel')) {
+              log(`✅ Clicking CANCEL to keep application data`, 'success');
+              button.click();
+              await sleep(1000);
+              return true;
+            }
+          }
+
+          // If no Cancel found, press ESC
+          log('Pressing ESC to cancel removal...', 'warn');
+          document.dispatchEvent(new KeyboardEvent('keydown', {
+            key: 'Escape',
+            keyCode: 27,
+            which: 27,
+            bubbles: true,
+            cancelable: true
+          }));
+          await sleep(1000);
+          return true;
+        }
+      }
+    }
+
     if (pageText.includes('Save this application?') ||
         pageText.includes('your application will be discarded') ||
         pageText.includes('Any uploaded files will not be saved')) {
@@ -979,7 +1020,10 @@ class LinkedInEasyApplyBot {
       'remote',
       'full-time',
       'part-time',
-      'hybrid'
+      'hybrid',
+      'remove',
+      'delete',
+      'clear'
     ];
 
     // Only search in modal footer (most restrictive)
@@ -1115,7 +1159,10 @@ class LinkedInEasyApplyBot {
       'remote',
       'full-time',
       'part-time',
-      'hybrid'
+      'hybrid',
+      'remove',
+      'delete',
+      'clear'
     ];
 
     // CRITICAL: Only search within Easy Apply modal footer/actions
