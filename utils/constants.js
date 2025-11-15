@@ -6,14 +6,14 @@ const STORAGE_KEYS = {
   ANSWERS: 'commonAnswers'
 };
 
-// LinkedIn selectors
+// LinkedIn selectors - UPDATED FOR 2024+
 const SELECTORS = {
-  EASY_APPLY_BUTTON: 'button.jobs-apply-button',
-  MODAL: '.jobs-easy-apply-modal',
-  NEXT_BUTTON: 'button[aria-label*="Continue"], button[aria-label*="Next"], button:contains("Next")',
-  REVIEW_BUTTON: 'button[aria-label*="Review"], button:contains("Review")',
-  SUBMIT_BUTTON: 'button[aria-label*="Submit"], button:contains("Submit application")',
-  FORM_CONTAINER: '.jobs-easy-apply-content',
+  EASY_APPLY_BUTTON: 'button.jobs-apply-button, button[aria-label*="Easy Apply"], .jobs-apply-button',
+  MODAL: '.jobs-easy-apply-modal, [data-test-modal], .artdeco-modal',
+  NEXT_BUTTON: 'button[aria-label*="Continue"], button[aria-label*="Next"], button.artdeco-button--primary',
+  REVIEW_BUTTON: 'button[aria-label*="Review"]',
+  SUBMIT_BUTTON: 'button[aria-label*="Submit"], button[aria-label*="submit application"]',
+  FORM_CONTAINER: '.jobs-easy-apply-content, .jobs-easy-apply-modal__content, form',
   TEXT_INPUT: 'input[type="text"]',
   EMAIL_INPUT: 'input[type="email"]',
   TEL_INPUT: 'input[type="tel"]',
@@ -23,9 +23,11 @@ const SELECTORS = {
   RADIO: 'input[type="radio"]',
   CHECKBOX: 'input[type="checkbox"]',
   FILE_INPUT: 'input[type="file"]',
-  JOB_TITLE: '.job-details-jobs-unified-top-card__job-title',
-  COMPANY_NAME: '.job-details-jobs-unified-top-card__company-name',
-  JOB_LINK: 'a.job-card-list__title'
+  JOB_TITLE: '.job-details-jobs-unified-top-card__job-title, h1.t-24, .job-details-jobs-unified-top-card__job-title-link',
+  COMPANY_NAME: '.job-details-jobs-unified-top-card__company-name, .job-details-jobs-unified-top-card__company-name a',
+  JOB_LINK: 'a.job-card-list__title, a.job-card-container__link',
+  JOB_CARD: '.job-card-container, .jobs-search-results__list-item, .scaffold-layout__list-item',
+  ALL_INPUTS: 'input, select, textarea'
 };
 
 // Common question patterns

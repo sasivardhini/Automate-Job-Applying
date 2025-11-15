@@ -122,17 +122,57 @@ async function selectOption(select, value, delay = 300) {
 }
 
 /**
- * Extract job details from the page
+ * Extract job details from the page - ENHANCED VERSION
  */
 function extractJobDetails() {
   try {
-    const jobTitle = document.querySelector(SELECTORS.JOB_TITLE)?.textContent?.trim() || 'Unknown';
-    const companyName = document.querySelector(SELECTORS.COMPANY_NAME)?.textContent?.trim() || 'Unknown';
     const jobUrl = window.location.href;
     const jobId = extractJobIdFromUrl(jobUrl);
 
+    // Try multiple selectors for job title
+    const titleSelectors = [
+      '.job-details-jobs-unified-top-card__job-title',
+      'h1.t-24',
+      '.job-details-jobs-unified-top-card__job-title-link',
+      '.jobs-unified-top-card__job-title',
+      'h1.jobs-unified-top-card__job-title',
+      'h2.t-24'
+    ];
+
+    let jobTitle = 'Unknown';
+    for (const selector of titleSelectors) {
+      const element = document.querySelector(selector);
+      if (element && element.textContent.trim()) {
+        jobTitle = element.textContent.trim();
+        break;
+      }
+    }
+
+    // Try multiple selectors for company name
+    const companySelectors = [
+      '.job-details-jobs-unified-top-card__company-name',
+      '.job-details-jobs-unified-top-card__company-name a',
+      '.jobs-unified-top-card__company-name',
+      '.jobs-unified-top-card__subtitle-primary-grouping span.t-14',
+      'a[data-control-name="company_link"]'
+    ];
+
+    let companyName = 'Unknown';
+    for (const selector of companySelectors) {
+      const element = document.querySelector(selector);
+      if (element && element.textContent.trim()) {
+        companyName = element.textContent.trim();
+        break;
+      }
+    }
+
+    // Generate a fallback job ID if needed
+    const finalJobId = jobId || generateFallbackJobId(jobTitle, companyName);
+
+    log(`Extracted job details: ${jobTitle} at ${companyName} (ID: ${finalJobId})`, 'info');
+
     return {
-      jobId,
+      jobId: finalJobId,
       jobTitle,
       companyName,
       jobUrl,
@@ -140,20 +180,56 @@ function extractJobDetails() {
     };
   } catch (error) {
     console.error('Extract job details error:', error);
+
+    // Return fallback details
+    return {
+      jobId: generateFallbackJobId('Unknown', 'Unknown'),
+      jobTitle: 'Unknown Position',
+      companyName: 'Unknown Company',
+      jobUrl: window.location.href,
+      timestamp: Date.now()
+    };
+  }
+}
+
+/**
+ * Extract job ID from LinkedIn URL - ENHANCED
+ */
+function extractJobIdFromUrl(url) {
+  try {
+    // Try multiple patterns
+    const patterns = [
+      /\/jobs\/view\/(\d+)/,
+      /currentJobId=(\d+)/,
+      /\/jobs\/collections\/[^/]+\/(\d+)/,
+      /jobId=(\d+)/
+    ];
+
+    for (const pattern of patterns) {
+      const match = url.match(pattern);
+      if (match && match[1]) {
+        return match[1];
+      }
+    }
+
+    return null;
+  } catch (error) {
     return null;
   }
 }
 
 /**
- * Extract job ID from LinkedIn URL
+ * Generate fallback job ID
  */
-function extractJobIdFromUrl(url) {
-  try {
-    const match = url.match(/\/jobs\/view\/(\d+)/);
-    return match ? match[1] : null;
-  } catch (error) {
-    return null;
+function generateFallbackJobId(title, company) {
+  const str = `${title}-${company}-${Date.now()}`;
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
   }
+  return Math.abs(hash).toString();
 }
 
 /**

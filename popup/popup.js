@@ -222,28 +222,41 @@ async function saveSettings() {
 }
 
 /**
- * Apply to current job
+ * Apply to current job - ENHANCED VERSION
  */
 async function applyNow() {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
-    if (!tab.url.includes('linkedin.com')) {
-      alert('Please navigate to LinkedIn first');
+    // Check if on LinkedIn
+    if (!tab.url || !tab.url.includes('linkedin.com')) {
+      alert('❌ Please navigate to LinkedIn first!\n\nOpen https://www.linkedin.com/jobs/ and try again.');
       return;
     }
 
-    const response = await chrome.tabs.sendMessage(tab.id, { action: 'applyNow' });
+    // Check if on jobs page
+    if (!tab.url.includes('/jobs/')) {
+      alert('❌ Please open a LinkedIn job posting first!\n\nNavigate to a specific job, then click Apply Now.');
+      return;
+    }
 
-    if (response.success) {
-      alert('Application started!');
-      setTimeout(loadDashboard, 2000); // Reload dashboard after 2 seconds
-    } else {
-      alert(response.error || 'Could not start application');
+    try {
+      const response = await chrome.tabs.sendMessage(tab.id, { action: 'applyNow' });
+
+      if (response && response.success) {
+        showSuccessMessage('✅ Application process started!');
+        setTimeout(loadDashboard, 3000);
+      } else {
+        alert(`❌ ${response?.error || 'Could not start application'}\n\nMake sure:\n1. You're on a job posting page\n2. The "Easy Apply" button is visible\n3. You've filled out your profile in the extension`);
+      }
+    } catch (msgError) {
+      // Content script might not be loaded, try reloading page
+      alert('❌ Bot not loaded on this page.\n\n✅ Solution: Reload the LinkedIn job page and try again.\n\nNote: The extension must load when you open LinkedIn.');
+      console.error('Message error:', msgError);
     }
   } catch (error) {
     console.error('Error applying:', error);
-    alert('Error: Make sure you are on a LinkedIn job page');
+    alert('❌ Error starting application.\n\nPlease ensure:\n1. You\'re on linkedin.com/jobs/view/[job-id]\n2. The page has fully loaded\n3. You can see the "Easy Apply" button');
   }
 }
 
