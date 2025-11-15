@@ -212,8 +212,28 @@ class LinkedInEasyApplyBot {
       showNotification('Auto-apply started - Bot will process all visible jobs', 'success');
       this.startBatchProcessing();
     } else {
-      showNotification('Auto-apply stopped', 'info');
+      // CRITICAL: Stop the bot IMMEDIATELY
+      showNotification('Auto-apply stopped - Bot will halt after current step', 'info');
       this.isRunning = false;
+      this.applicationInProgress = false; // Force stop current application
+      this.addActivityLog('🛑 STOP requested by user', 'error');
+      log('🛑 STOP button clicked - halting bot...', 'warn');
+    }
+  }
+
+  /**
+   * Stop auto-apply - called when stop is needed
+   */
+  stopAutoApply() {
+    this.settings.autoApply = false;
+    this.isRunning = false;
+    this.applicationInProgress = false;
+    this.updateStatus('Stopped');
+    this.addActivityLog('🛑 Bot stopped', 'error');
+
+    const button = document.getElementById('easy-apply-toggle');
+    if (button) {
+      button.textContent = 'Start';
     }
   }
 
@@ -410,6 +430,13 @@ class LinkedInEasyApplyBot {
     this.addActivityLog(`Found ${jobCards.length} jobs on page`, 'success');
 
     for (let i = 0; i < jobCards.length; i++) {
+      // CRITICAL: Check if user clicked STOP
+      if (!this.settings.autoApply || !this.isRunning) {
+        log('🛑 STOP detected - exiting job processing loop', 'warn');
+        this.addActivityLog('🛑 Stopped by user', 'error');
+        return false;
+      }
+
       const jobCard = jobCards[i];
 
       log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`, 'info');
@@ -709,6 +736,14 @@ class LinkedInEasyApplyBot {
     while (currentStep < maxSteps) {
       await sleep(randomDelay(500, 800)); // SPEED FIX: Reduced from 1500-2500
 
+      // CRITICAL: Check if user clicked STOP
+      if (!this.settings.autoApply || !this.isRunning || !this.applicationInProgress) {
+        log('🛑 STOP detected - exiting form processing', 'warn');
+        this.addActivityLog('🛑 Stopped by user during form fill', 'error');
+        await this.closeModal();
+        return false;
+      }
+
       // CRITICAL: Check if session expired
       if (this.detectSessionExpired()) {
         throw new Error('Session expired');
@@ -794,8 +829,9 @@ class LinkedInEasyApplyBot {
 
       // Look for Review button
       const reviewButton = this.findButtonAdvanced(['Review', 'Review your application', 'review']);
-      if (reviewButton && !reviewButton.disabled) {
+      if (reviewButton && !reviewButton.disabled && !reviewButton.getAttribute('aria-disabled')) {
         log('Found REVIEW button, clicking...', 'info');
+        this.addActivityLog('Clicking Review button...', 'info');
         await clickElement(reviewButton, 2000);
         currentStep++;
         continue;
@@ -803,8 +839,9 @@ class LinkedInEasyApplyBot {
 
       // Look for Next/Continue button
       const nextButton = this.findButtonAdvanced(['Next', 'Continue', 'next', 'continue']);
-      if (nextButton && !nextButton.disabled) {
+      if (nextButton && !nextButton.disabled && !nextButton.getAttribute('aria-disabled')) {
         log('Found NEXT button, moving to next step...', 'info');
+        this.addActivityLog('Clicking Next button...', 'info');
         await clickElement(nextButton, 2000);
         currentStep++;
         continue;
@@ -1107,7 +1144,23 @@ class LinkedInEasyApplyBot {
       'hybrid',
       'remove',
       'delete',
-      'clear'
+      'clear',
+      'edit',
+      'update',
+      'change',
+      'upload',
+      'browse',
+      'add another',
+      'add more',
+      '+ add',
+      'apply filters',
+      'reset filters',
+      'date posted',
+      'experience level',
+      'company',
+      'job type',
+      'benefits',
+      'industry'
     ];
 
     // Only search in modal footer (most restrictive)
@@ -1246,7 +1299,23 @@ class LinkedInEasyApplyBot {
       'hybrid',
       'remove',
       'delete',
-      'clear'
+      'clear',
+      'edit',
+      'update',
+      'change',
+      'upload',
+      'browse',
+      'add another',
+      'add more',
+      '+ add',
+      'apply filters',
+      'reset filters',
+      'date posted',
+      'experience level',
+      'company',
+      'job type',
+      'benefits',
+      'industry'
     ];
 
     // CRITICAL: Only search within Easy Apply modal footer/actions
@@ -1307,9 +1376,15 @@ class LinkedInEasyApplyBot {
       log(`  Checking button: "${buttonText}" | aria-label="${buttonLabel}"`, 'info');
 
       // ULTRA STRICT: Skip if button contains ANY avoid words
-      const shouldAvoid = avoidWords.some(word => combinedText.includes(word));
-      if (shouldAvoid) {
-        log(`    ❌ SKIPPING - Contains avoided word: "${buttonText}"`, 'warn');
+      const avoidedWord = avoidWords.find(word => combinedText.includes(word));
+      if (avoidedWord) {
+        log(`    ❌ SKIPPING - Contains avoided word "${avoidedWord}": "${buttonText}"`, 'warn');
+        continue;
+      }
+
+      // Skip disabled buttons
+      if (button.disabled || button.getAttribute('aria-disabled') === 'true') {
+        log(`    ❌ SKIPPING - Button is disabled: "${buttonText}"`, 'warn');
         continue;
       }
 
