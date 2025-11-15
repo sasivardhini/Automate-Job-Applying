@@ -707,7 +707,7 @@ class LinkedInEasyApplyBot {
     log('Starting advanced form processing...', 'info');
 
     while (currentStep < maxSteps) {
-      await sleep(randomDelay(1500, 2500));
+      await sleep(randomDelay(500, 800)); // SPEED FIX: Reduced from 1500-2500
 
       // CRITICAL: Check if session expired
       if (this.detectSessionExpired()) {
@@ -743,7 +743,7 @@ class LinkedInEasyApplyBot {
       await this.fillCurrentForm();
 
       // Wait for any validation or dynamic content
-      await sleep(1500);
+      await sleep(500); // SPEED FIX: Reduced from 1500
 
       // CRITICAL: Check for form validation errors
       const validationErrors = this.detectFormValidationErrors();
@@ -756,11 +756,11 @@ class LinkedInEasyApplyBot {
           log(`  Attempting to fill ${requiredFields.length} required fields...`, 'info');
           for (const field of requiredFields) {
             await this.fillFieldIntelligent(field);
-            await sleep(randomDelay(300, 600));
+            await sleep(randomDelay(100, 200)); // SPEED FIX: Reduced from 300-600
           }
 
           // Wait and check errors again
-          await sleep(1500);
+          await sleep(500); // SPEED FIX: Reduced from 1500
           const remainingErrors = this.detectFormValidationErrors();
 
           if (remainingErrors.length > 0 && remainingErrors.length >= validationErrors.length) {
@@ -935,9 +935,9 @@ class LinkedInEasyApplyBot {
 
                 log(`🎯 Found DISCARD button: "${btnText}", clicking NOW...`, 'success');
                 button.click();
-                await sleep(500);
+                await sleep(200); // SPEED FIX: Reduced from 500
                 button.click(); // Double click for safety
-                await sleep(2000);
+                await sleep(500); // SPEED FIX: Reduced from 2000
                 return true;
               }
             }
@@ -958,9 +958,9 @@ class LinkedInEasyApplyBot {
               if (classes.includes('secondary') || classes.includes('tertiary')) {
                 log(`🎯 Clicking secondary button: "${btnText}"`, 'success');
                 button.click();
-                await sleep(500);
+                await sleep(200); // SPEED FIX: Reduced from 500
                 button.click();
-                await sleep(2000);
+                await sleep(500); // SPEED FIX: Reduced from 2000
                 return true;
               }
             }
@@ -975,9 +975,9 @@ class LinkedInEasyApplyBot {
               if (!btnText.includes('save')) {
                 log(`🎯 Clicking last button: "${btnText}"`, 'success');
                 lastButton.click();
-                await sleep(500);
+                await sleep(200); // SPEED FIX: Reduced from 500
                 lastButton.click();
-                await sleep(2000);
+                await sleep(500); // SPEED FIX: Reduced from 2000
                 return true;
               }
             }
@@ -998,9 +998,9 @@ class LinkedInEasyApplyBot {
               if (closeBtn) {
                 log(`🎯 Clicking close button`, 'success');
                 closeBtn.click();
-                await sleep(500);
+                await sleep(200); // SPEED FIX: Reduced from 500
                 closeBtn.click();
-                await sleep(2000);
+                await sleep(500); // SPEED FIX: Reduced from 2000
                 return true;
               }
             }
@@ -1497,7 +1497,7 @@ class LinkedInEasyApplyBot {
           await this.fillField(field);
         }
 
-        await sleep(randomDelay(100, 300));
+        await sleep(randomDelay(50, 150)); // SPEED FIX: Reduced from 100-300
       } catch (error) {
         log(`Error filling field: ${error.message}`, 'warn');
       }
@@ -1700,7 +1700,7 @@ class LinkedInEasyApplyBot {
       if (!checkbox.checked) {
         log(`  ✅ Checking REQUIRED checkbox: "${label}"`, 'success');
         checkbox.click();
-        await sleep(randomDelay(200, 400));
+        await sleep(randomDelay(100, 200)); // SPEED FIX: Reduced from 200-400
 
         // Dispatch change event for React/Angular
         checkbox.dispatchEvent(new Event('change', { bubbles: true }));
@@ -1716,7 +1716,7 @@ class LinkedInEasyApplyBot {
         if (!checkbox.checked) {
           log(`  ✅ Checking optional beneficial checkbox: "${label}"`, 'info');
           checkbox.click();
-          await sleep(randomDelay(200, 400));
+          await sleep(randomDelay(100, 200)); // SPEED FIX: Reduced from 200-400
         }
       } else {
         log(`  ⏭️  Skipping optional checkbox: "${label}"`, 'info');
@@ -1725,7 +1725,7 @@ class LinkedInEasyApplyBot {
   }
 
   /**
-   * Handle file upload fields - CRITICAL FIX
+   * Handle file upload fields - CRITICAL FIX - ENHANCED for Resume step
    */
   async handleFileUpload(fileInput) {
     const label = getFieldLabel(fileInput);
@@ -1738,29 +1738,47 @@ class LinkedInEasyApplyBot {
     const isResume = lowerLabel.includes('resume') || lowerLabel.includes('cv');
     const isCoverLetter = lowerLabel.includes('cover letter');
 
-    if (isRequired) {
-      // CRITICAL: Required file upload - LinkedIn usually pre-fills from profile
-      // Check if already uploaded (LinkedIn shows filename)
-      const container = fileInput.closest('div');
-      const containerText = container ? container.textContent : '';
+    // CRITICAL: Check if resume is already uploaded in LinkedIn profile
+    // LinkedIn shows uploaded resume from profile - look for document name or "Uploaded" text
+    const container = fileInput.closest('div[class*="jobs-document"]') ||
+                     fileInput.closest('div[class*="document"]') ||
+                     fileInput.closest('section') ||
+                     fileInput.closest('div');
 
+    if (container) {
+      const containerText = container.textContent || '';
+
+      // Check for already uploaded resume indicators
       if (containerText.includes('.pdf') ||
           containerText.includes('.doc') ||
+          containerText.includes('.docx') ||
           containerText.includes('Uploaded') ||
-          containerText.includes('attached')) {
-        log(`  ✅ File already uploaded: ${isResume ? 'Resume' : isCoverLetter ? 'Cover Letter' : 'File'}`, 'success');
+          containerText.includes('uploaded') ||
+          containerText.includes('attached') ||
+          containerText.match(/\d+\s*(KB|MB|bytes)/i)) { // File size indicator
+
+        log(`  ✅ Resume/file already uploaded from LinkedIn profile!`, 'success');
+        this.addActivityLog(`✅ Resume detected - already uploaded`, 'success');
         return;
       }
 
-      // LinkedIn usually auto-fills resume from profile
-      // If not auto-filled, log warning and continue (don't fail application)
-      log(`  ⚠️  REQUIRED file upload not filled: "${label}"`, 'warn');
-      log(`  ℹ️  LinkedIn typically auto-fills resume from your profile`, 'info');
-      log(`  ➡️  Continuing application - LinkedIn may auto-fill or show error`, 'info');
-      this.addActivityLog(`⚠️ File upload required: ${label}`, 'warn');
+      // Check if there's a "Use resume from profile" or similar button
+      const useProfileBtn = container.querySelector('button[aria-label*="resume"], button[aria-label*="Resume"]');
+      if (useProfileBtn) {
+        log(`  🔄 Clicking "Use resume from profile" button...`, 'info');
+        useProfileBtn.click();
+        await sleep(500);
+        this.addActivityLog(`✅ Using resume from profile`, 'success');
+        return;
+      }
+    }
 
-      // Don't throw error - let LinkedIn handle it
-      // If LinkedIn requires it, form validation will catch it
+    if (isRequired) {
+      // LinkedIn usually auto-fills resume from profile
+      // Just log and continue - don't block the application
+      log(`  ⚠️  Required resume upload field found`, 'warn');
+      log(`  ➡️  LinkedIn should auto-fill from profile - continuing...`, 'info');
+      this.addActivityLog(`⚠️ Resume upload required`, 'warn');
     } else {
       log(`  ⏭️  Optional file upload - skipping`, 'info');
     }
