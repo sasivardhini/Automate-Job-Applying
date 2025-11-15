@@ -144,6 +144,11 @@ class LinkedInEasyApplyBot {
   async searchAndApply() {
     log('Search & Apply clicked', 'info');
 
+    // CRITICAL: Check if session is expired first
+    if (this.detectSessionExpired()) {
+      return;
+    }
+
     // RELOAD profile to get latest data
     await this.loadData();
     log(`Profile reloaded: Job Title = "${this.profile.jobTitle}"`, 'info');
@@ -704,6 +709,11 @@ class LinkedInEasyApplyBot {
     while (currentStep < maxSteps) {
       await sleep(randomDelay(1500, 2500));
 
+      // CRITICAL: Check if session expired
+      if (this.detectSessionExpired()) {
+        throw new Error('Session expired');
+      }
+
       // IMPORTANT: Check for "Save application" dialog and handle it
       await this.handleSaveApplicationDialog();
 
@@ -734,6 +744,34 @@ class LinkedInEasyApplyBot {
 
       // Wait for any validation or dynamic content
       await sleep(1500);
+
+      // CRITICAL: Check for form validation errors
+      const validationErrors = this.detectFormValidationErrors();
+      if (validationErrors.length > 0) {
+        log(`⚠️  Found ${validationErrors.length} validation errors, trying to fix...`, 'warn');
+
+        // Try to fill unfilled required fields
+        const requiredFields = this.findUnfilledRequiredFields();
+        if (requiredFields.length > 0) {
+          log(`  Attempting to fill ${requiredFields.length} required fields...`, 'info');
+          for (const field of requiredFields) {
+            await this.fillFieldIntelligent(field);
+            await sleep(randomDelay(300, 600));
+          }
+
+          // Wait and check errors again
+          await sleep(1500);
+          const remainingErrors = this.detectFormValidationErrors();
+
+          if (remainingErrors.length > 0 && remainingErrors.length >= validationErrors.length) {
+            // Errors persist - might be unfixable
+            log(`  ⚠️  Still ${remainingErrors.length} errors after retry - continuing anyway`, 'warn');
+            this.addActivityLog(`⚠️ Form errors persisting`, 'warn');
+          } else if (remainingErrors.length === 0) {
+            log(`  ✅ All validation errors fixed!`, 'success');
+          }
+        }
+      }
 
       // Look for Submit button (final step)
       const submitButton = this.findButtonAdvanced(['Submit application', 'Submit', 'submit']);
@@ -1435,7 +1473,10 @@ class LinkedInEasyApplyBot {
       }
 
       try {
-        if (inputType === 'radio') {
+        if (inputType === 'file') {
+          // CRITICAL: Handle file uploads (resume, cover letter)
+          await this.handleFileUpload(field);
+        } else if (inputType === 'radio') {
           // Handle radio buttons
           if (!field.checked) {
             const name = field.name;
@@ -1645,18 +1686,161 @@ class LinkedInEasyApplyBot {
   }
 
   /**
-   * Fill checkbox
+   * Fill checkbox - ENHANCED with required checkbox support
    */
   async fillCheckbox(checkbox) {
     const label = getFieldLabel(checkbox);
-    log(`Found checkbox: ${label}`, 'info');
-
-    // Generally safe to check optional checkboxes
-    // Skip if it looks like terms/conditions
     const lowerLabel = label.toLowerCase();
-    if (!lowerLabel.includes('terms') && !lowerLabel.includes('agree') && !lowerLabel.includes('acknowledge')) {
-      // Leave unchecked for now
+    const isRequired = checkbox.required || checkbox.hasAttribute('required') || checkbox.getAttribute('aria-required') === 'true';
+
+    log(`Found checkbox: ${label} (required: ${isRequired})`, 'info');
+
+    // CRITICAL FIX: Check REQUIRED checkboxes even if they're terms/conditions
+    if (isRequired) {
+      if (!checkbox.checked) {
+        log(`  ✅ Checking REQUIRED checkbox: "${label}"`, 'success');
+        checkbox.click();
+        await sleep(randomDelay(200, 400));
+
+        // Dispatch change event for React/Angular
+        checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+        checkbox.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    } else {
+      // For optional checkboxes, be conservative
+      // Only check if it's clearly beneficial (e.g., "Would you like updates about similar positions?")
+      if (lowerLabel.includes('notify') ||
+          lowerLabel.includes('update') ||
+          lowerLabel.includes('alert') ||
+          lowerLabel.includes('similar position')) {
+        if (!checkbox.checked) {
+          log(`  ✅ Checking optional beneficial checkbox: "${label}"`, 'info');
+          checkbox.click();
+          await sleep(randomDelay(200, 400));
+        }
+      } else {
+        log(`  ⏭️  Skipping optional checkbox: "${label}"`, 'info');
+      }
     }
+  }
+
+  /**
+   * Handle file upload fields - CRITICAL FIX
+   */
+  async handleFileUpload(fileInput) {
+    const label = getFieldLabel(fileInput);
+    const lowerLabel = label.toLowerCase();
+    const isRequired = fileInput.required || fileInput.hasAttribute('required') || fileInput.getAttribute('aria-required') === 'true';
+
+    log(`📎 Found file upload field: "${label}" (required: ${isRequired})`, 'info');
+
+    // Check if this is a resume or cover letter upload
+    const isResume = lowerLabel.includes('resume') || lowerLabel.includes('cv');
+    const isCoverLetter = lowerLabel.includes('cover letter');
+
+    if (isRequired) {
+      // CRITICAL: Required file upload - LinkedIn usually pre-fills from profile
+      // Check if already uploaded (LinkedIn shows filename)
+      const container = fileInput.closest('div');
+      const containerText = container ? container.textContent : '';
+
+      if (containerText.includes('.pdf') ||
+          containerText.includes('.doc') ||
+          containerText.includes('Uploaded') ||
+          containerText.includes('attached')) {
+        log(`  ✅ File already uploaded: ${isResume ? 'Resume' : isCoverLetter ? 'Cover Letter' : 'File'}`, 'success');
+        return;
+      }
+
+      // LinkedIn usually auto-fills resume from profile
+      // If not auto-filled, log warning and continue (don't fail application)
+      log(`  ⚠️  REQUIRED file upload not filled: "${label}"`, 'warn');
+      log(`  ℹ️  LinkedIn typically auto-fills resume from your profile`, 'info');
+      log(`  ➡️  Continuing application - LinkedIn may auto-fill or show error`, 'info');
+      this.addActivityLog(`⚠️ File upload required: ${label}`, 'warn');
+
+      // Don't throw error - let LinkedIn handle it
+      // If LinkedIn requires it, form validation will catch it
+    } else {
+      log(`  ⏭️  Optional file upload - skipping`, 'info');
+    }
+  }
+
+  /**
+   * Detect session expired or logged out - CRITICAL FIX
+   */
+  detectSessionExpired() {
+    const pageText = document.body.textContent.toLowerCase();
+
+    // Check for session expired indicators
+    if (pageText.includes('session has expired') ||
+        pageText.includes('please log in') ||
+        pageText.includes('sign in to continue') ||
+        pageText.includes('you must be logged in') ||
+        document.querySelector('input[type="password"][name*="session"]')) {
+
+      log('🚨 SESSION EXPIRED - User needs to log in again!', 'error');
+      this.addActivityLog('❌ Session expired - please log in', 'error');
+
+      // Stop the bot
+      this.stopAutoApply();
+      showNotification('Session expired - Please log in to LinkedIn', 'error');
+
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Detect form validation errors - CRITICAL FIX
+   */
+  detectFormValidationErrors() {
+    // Look for error messages
+    const errorSelectors = [
+      '.artdeco-inline-feedback--error',
+      '[role="alert"]',
+      '.error-message',
+      '.validation-error',
+      '.field-error',
+      '[class*="error"]',
+      '[class*="Error"]'
+    ];
+
+    const errors = [];
+
+    for (const selector of errorSelectors) {
+      const errorElements = document.querySelectorAll(selector);
+
+      for (const el of errorElements) {
+        const errorText = (el.textContent || '').trim();
+
+        // Filter out false positives
+        if (errorText.length > 0 &&
+            errorText.length < 200 && // Real errors are short
+            !errorText.toLowerCase().includes('learn more')) {
+
+          // Check if error is visible
+          const style = window.getComputedStyle(el);
+          if (style.display !== 'none' && style.visibility !== 'hidden') {
+            errors.push(errorText);
+          }
+        }
+      }
+    }
+
+    if (errors.length > 0) {
+      log(`⚠️  Form validation errors detected:`, 'warn');
+      errors.forEach((err, idx) => {
+        log(`  ${idx + 1}. ${err}`, 'warn');
+      });
+
+      this.addActivityLog(`⚠️ Validation errors: ${errors.length}`, 'warn');
+
+      return errors;
+    }
+
+    return [];
   }
 
   /**
