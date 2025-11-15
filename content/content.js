@@ -742,6 +742,9 @@ class LinkedInEasyApplyBot {
       // Fill all fields on current page
       await this.fillCurrentForm();
 
+      // IMPORTANT: Scroll modal to reveal buttons at bottom (Review, Next, Submit)
+      await this.scrollModalToBottom();
+
       // Wait for any validation or dynamic content
       await sleep(500); // SPEED FIX: Reduced from 1500
 
@@ -1025,6 +1028,49 @@ class LinkedInEasyApplyBot {
     }
 
     return false;
+  }
+
+  /**
+   * Scroll modal to bottom to reveal hidden buttons (Review, Next, Submit)
+   */
+  async scrollModalToBottom() {
+    try {
+      // Find the scrollable container in the Easy Apply modal
+      const scrollContainers = [
+        '.jobs-easy-apply-modal__content',
+        '.jobs-easy-apply-content',
+        '[data-test-modal-content]',
+        '.artdeco-modal__content',
+        '.jobs-easy-apply-modal'
+      ];
+
+      for (const selector of scrollContainers) {
+        const container = document.querySelector(selector);
+        if (container) {
+          const scrollHeight = container.scrollHeight;
+          const clientHeight = container.clientHeight;
+
+          // Check if container is scrollable
+          if (scrollHeight > clientHeight) {
+            log(`📜 Scrolling modal container to reveal buttons...`, 'info');
+
+            // Scroll to bottom smoothly
+            container.scrollTo({
+              top: scrollHeight,
+              behavior: 'smooth'
+            });
+
+            await sleep(400); // Wait for scroll to complete
+            log(`✅ Scrolled to bottom`, 'success');
+            return;
+          }
+        }
+      }
+
+      log('ℹ️  No scrollable container found or already at bottom', 'info');
+    } catch (error) {
+      log(`Error scrolling modal: ${error.message}`, 'warn');
+    }
   }
 
   /**
