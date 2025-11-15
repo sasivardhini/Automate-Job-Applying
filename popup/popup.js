@@ -11,6 +11,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Set up event listeners
   setupEventListeners();
+
+  // Check if profile is filled and hide/show quick start
+  await checkProfileStatus();
 });
 
 /**
@@ -54,6 +57,37 @@ function setupEventListeners() {
   document.getElementById('apply-now-btn').addEventListener('click', applyNow);
   document.getElementById('export-btn').addEventListener('click', exportApplications);
   document.getElementById('clear-btn').addEventListener('click', clearApplications);
+
+  // Quick start guide button
+  const gotoProfileBtn = document.getElementById('goto-profile-btn');
+  if (gotoProfileBtn) {
+    gotoProfileBtn.addEventListener('click', () => {
+      // Switch to profile tab
+      document.querySelector('.tab-btn[data-tab="profile"]').click();
+    });
+  }
+}
+
+/**
+ * Check if profile is filled and hide/show quick start guide
+ */
+async function checkProfileStatus() {
+  try {
+    const response = await chrome.runtime.sendMessage({ action: 'getProfile' });
+    if (response.success) {
+      const profile = response.data;
+      const quickStartGuide = document.getElementById('quick-start-guide');
+
+      // Check if essential fields are filled
+      const isProfileFilled = profile.firstName && profile.lastName && profile.email && profile.phone;
+
+      if (isProfileFilled && quickStartGuide) {
+        quickStartGuide.style.display = 'none';
+      }
+    }
+  } catch (error) {
+    console.error('Error checking profile status:', error);
+  }
 }
 
 /**

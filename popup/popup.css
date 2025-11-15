@@ -81,6 +81,46 @@ body {
   display: block;
 }
 
+/* Quick Start Guide */
+.quick-start-guide {
+  background: linear-gradient(135deg, #0073b1 0%, #005582 100%);
+  color: white;
+  padding: 20px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.quick-start-guide h3 {
+  margin-bottom: 12px;
+  font-size: 16px;
+}
+
+.start-steps {
+  margin: 16px 0;
+  padding-left: 20px;
+  line-height: 1.8;
+}
+
+.start-steps li {
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+.start-steps a {
+  color: #f0f8ff;
+  text-decoration: underline;
+}
+
+#goto-profile-btn {
+  background: white;
+  color: #0073b1;
+  margin-top: 12px;
+}
+
+#goto-profile-btn:hover {
+  background: #f3f6f8;
+}
+
 /* Stats Grid */
 .stats-grid {
   display: grid;

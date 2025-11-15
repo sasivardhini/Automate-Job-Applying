@@ -348,6 +348,9 @@ class LinkedInEasyApplyBot {
     while (currentStep < maxSteps) {
       await sleep(randomDelay(1500, 2500));
 
+      // IMPORTANT: Check for "Save application" dialog and handle it
+      await this.handleSaveApplicationDialog();
+
       // Get current form state
       const currentFormState = this.getFormState();
 
@@ -355,10 +358,10 @@ class LinkedInEasyApplyBot {
       if (currentFormState === lastFormState && currentStep > 0) {
         log('Form state unchanged, attempting recovery...', 'warn');
 
-        // Try clicking any enabled primary button
-        const anyButton = this.findAnyActionButton();
+        // Try clicking any enabled primary button (but not preferences/save)
+        const anyButton = this.findSafeActionButton();
         if (anyButton) {
-          log('Found action button, clicking...', 'info');
+          log('Found safe action button, clicking...', 'info');
           await clickElement(anyButton, 2000);
           currentStep++;
           continue;
@@ -441,6 +444,95 @@ class LinkedInEasyApplyBot {
   }
 
   /**
+   * Handle "Save this application?" dialog
+   */
+  async handleSaveApplicationDialog() {
+    // Check if the save dialog is present
+    const pageText = document.body.textContent;
+
+    if (pageText.includes('Save this application?') ||
+        pageText.includes('your application will be discarded')) {
+      log('Found "Save application" dialog - clicking Discard...', 'warn');
+
+      // Look for Discard/Don't save button
+      const discardButtons = [
+        'Discard',
+        "Don't save",
+        'Do not save',
+        'Skip'
+      ];
+
+      for (const text of discardButtons) {
+        const button = this.findButtonAdvanced([text]);
+        if (button) {
+          log(`Clicking "${text}" button to discard and continue...`, 'info');
+          await clickElement(button, 2000);
+          return true;
+        }
+      }
+
+      // If can't find discard, try to close the modal
+      const closeButton = document.querySelector('button[aria-label*="Dismiss"]');
+      if (closeButton) {
+        log('Clicking Dismiss to close save dialog...', 'info');
+        await clickElement(closeButton, 2000);
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Find safe action button (avoids clicking wrong buttons)
+   */
+  findSafeActionButton() {
+    const modal = document.querySelector('.jobs-easy-apply-modal, [data-test-modal]');
+    if (!modal) return null;
+
+    const buttons = modal.querySelectorAll('button');
+    const avoidTexts = ['save', 'preferences', 'match', 'cancel', 'close', 'back'];
+
+    for (const button of buttons) {
+      if (button.disabled) continue;
+
+      const buttonText = (button.textContent || button.getAttribute('aria-label') || '').toLowerCase();
+
+      // Skip buttons we want to avoid
+      if (avoidTexts.some(avoid => buttonText.includes(avoid))) {
+        continue;
+      }
+
+      // Only click visible buttons
+      const style = window.getComputedStyle(button);
+      if (style.display !== 'none' && style.visibility !== 'hidden') {
+        // Prefer primary buttons
+        if (button.classList.contains('artdeco-button--primary')) {
+          return button;
+        }
+      }
+    }
+
+    // If no primary button, return any safe button
+    for (const button of buttons) {
+      if (button.disabled) continue;
+
+      const buttonText = (button.textContent || button.getAttribute('aria-label') || '').toLowerCase();
+
+      if (avoidTexts.some(avoid => buttonText.includes(avoid))) {
+        continue;
+      }
+
+      const style = window.getComputedStyle(button);
+      if (style.display !== 'none' && style.visibility !== 'hidden') {
+        return button;
+      }
+    }
+
+    return null;
+  }
+
+  /**
    * Get current form state for loop detection
    */
   getFormState() {
@@ -468,19 +560,34 @@ class LinkedInEasyApplyBot {
   }
 
   /**
-   * Find buttons with advanced logic
+   * Find buttons with advanced logic (IMPROVED - avoids wrong buttons)
    */
   findButtonAdvanced(textOptions) {
-    const allButtons = document.querySelectorAll('button, [role="button"], input[type="submit"]');
+    // Words to avoid in buttons
+    const avoidWords = ['preferences', 'match', 'save', 'cancel', 'back'];
+
+    // Only search within the Easy Apply modal
+    const modal = document.querySelector('.jobs-easy-apply-modal, [data-test-modal], .artdeco-modal');
+    const searchArea = modal || document;
+
+    const allButtons = searchArea.querySelectorAll('button, [role="button"], input[type="submit"]');
 
     for (const button of allButtons) {
-      const buttonText = (button.textContent || button.getAttribute('aria-label') || button.value || '').toLowerCase();
+      const buttonText = (button.textContent || button.getAttribute('aria-label') || button.value || '').toLowerCase().trim();
 
+      // Skip if button contains words we want to avoid
+      const shouldAvoid = avoidWords.some(word => buttonText.includes(word));
+      if (shouldAvoid) {
+        continue;
+      }
+
+      // Check if this button matches what we're looking for
       for (const text of textOptions) {
         if (buttonText.includes(text.toLowerCase())) {
           // Make sure it's visible and not disabled
           const style = window.getComputedStyle(button);
           if (style.display !== 'none' && style.visibility !== 'hidden' && !button.disabled) {
+            log(`Found button: "${buttonText}" for search: "${text}"`, 'info');
             return button;
           }
         }
@@ -779,10 +886,29 @@ class LinkedInEasyApplyBot {
    * Close Easy Apply modal
    */
   async closeModal() {
-    const closeButton = document.querySelector('button[aria-label*="Dismiss"]');
-    if (closeButton) {
-      await clickElement(closeButton);
+    // First check for save dialog and handle it
+    await this.handleSaveApplicationDialog();
+
+    // Then close the modal
+    await sleep(1000);
+
+    const closeSelectors = [
+      'button[aria-label*="Dismiss"]',
+      'button[aria-label*="Close"]',
+      'button.artdeco-modal__dismiss'
+    ];
+
+    for (const selector of closeSelectors) {
+      const closeButton = document.querySelector(selector);
+      if (closeButton) {
+        log('Closing Easy Apply modal...', 'info');
+        await clickElement(closeButton, 1000);
+        return;
+      }
     }
+
+    // Press ESC key as last resort
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27 }));
   }
 
   /**
