@@ -176,6 +176,8 @@ const Storage = {
       // Work Experience
       'YEARS_EXPERIENCE': profile.yearsExperience || '5',
       'TECH_EXPERIENCE': '2', // Default 2 years with any technology
+      'PRIOR_EXPERIENCE': 'Yes',
+      'INTERNSHIP_EXPERIENCE': 'Yes',
 
       // Authorization & Sponsorship
       'AUTHORIZATION': profile.workAuthorization || 'Yes',
@@ -191,6 +193,7 @@ const Storage = {
       'LOCATION': profile.jobLocation || '',
       'RELOCATION': 'Yes', // Always say yes to relocation
       'REMOTE_WORK': 'Yes',
+      'COMFORTABLE_SCHEDULE': 'Yes', // Comfortable with any schedule
 
       // Personal Info
       'LINKEDIN_URL': profile.linkedinUrl || '',
@@ -205,6 +208,7 @@ const Storage = {
       'DEGREE': 'Bachelor\'s Degree',
       'GRADUATION': '2020',
       'CERTIFICATIONS': 'None',
+      'IIT_GRADUATE': 'No', // Default No for IIT
 
       // Work Details
       'CURRENT_EMPLOYER': 'Confidential',

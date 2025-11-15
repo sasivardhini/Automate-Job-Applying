@@ -1583,7 +1583,12 @@ class LinkedInEasyApplyBot {
     log(`📝 Filling dropdown: ${label || 'unlabeled'}`, 'info');
 
     const options = Array.from(select.options);
-    log(`  Found ${options.length} options`, 'info');
+    log(`  Found ${options.length} options in dropdown`, 'info');
+
+    // Log all options for debugging
+    options.forEach((opt, idx) => {
+      log(`    Option ${idx}: text="${opt.text}" value="${opt.value}"`, 'info');
+    });
 
     // Skip if already selected (not the placeholder)
     if (select.value && select.value !== '' && select.value !== 'Select' && select.selectedIndex > 0) {
@@ -1596,16 +1601,29 @@ class LinkedInEasyApplyBot {
     if (questionType) {
       const value = await Storage.getAnswerForQuestion(questionType, this.profile);
       if (value) {
-        log(`  Trying to select: "${value}"`, 'info');
-        const selected = await selectOption(select, value);
-        if (selected) {
-          log(`  ✅ Selected: "${value}"`, 'success');
-          return;
+        log(`  Detected question type: ${questionType}, trying to select: "${value}"`, 'info');
+
+        // Try exact match first
+        for (let i = 0; i < options.length; i++) {
+          const optionText = (options[i].text || '').trim().toLowerCase();
+          const valueToMatch = value.toLowerCase();
+
+          if (optionText === valueToMatch || optionText.includes(valueToMatch) || valueToMatch.includes(optionText)) {
+            select.selectedIndex = i;
+            select.value = options[i].value;
+            select.dispatchEvent(new Event('change', { bubbles: true }));
+            select.dispatchEvent(new Event('input', { bubbles: true }));
+            select.dispatchEvent(new Event('blur', { bubbles: true }));
+            log(`  ✅ Selected matched option: "${options[i].text}"`, 'success');
+            await sleep(100);
+            return;
+          }
         }
       }
     }
 
-    // Fallback: Select first non-empty, non-placeholder option
+    // AGGRESSIVE FALLBACK: Select first non-empty, non-placeholder option
+    log(`  Using fallback: selecting first valid option...`, 'warn');
     for (let i = 0; i < options.length; i++) {
       const option = options[i];
       const optionText = (option.text || '').trim().toLowerCase();
@@ -1615,25 +1633,37 @@ class LinkedInEasyApplyBot {
       if (!optionValue ||
           optionValue === '' ||
           optionValue === 'Select' ||
+          optionValue === 'select' ||
           optionText === 'select' ||
           optionText === 'select an option' ||
           optionText === 'choose' ||
+          optionText === 'choose an option' ||
           optionText === 'please select' ||
-          optionText === '--') {
+          optionText === '--' ||
+          optionText === '- select -' ||
+          optionText.startsWith('select ') ||
+          optionText.startsWith('choose ')) {
+        log(`    Skipping placeholder option: "${optionText}"`, 'info');
         continue;
       }
 
-      // Select this option
+      // ALWAYS SELECT THE FIRST VALID OPTION - NEVER LEAVE EMPTY!
       select.selectedIndex = i;
       select.value = optionValue;
+
+      // Trigger ALL events to ensure LinkedIn recognizes the selection
+      select.focus();
+      select.dispatchEvent(new Event('focus', { bubbles: true }));
       select.dispatchEvent(new Event('change', { bubbles: true }));
       select.dispatchEvent(new Event('input', { bubbles: true }));
-      log(`  ✅ Auto-selected: "${option.text}"`, 'success');
-      await sleep(100);
+      select.dispatchEvent(new Event('blur', { bubbles: true }));
+
+      log(`  ✅ FORCE-selected first valid option: "${option.text}"`, 'success');
+      await sleep(150);
       return;
     }
 
-    log(`  ⚠️  Could not select any option for dropdown`, 'warn');
+    log(`  ❌ ERROR: Could not find ANY valid option in dropdown!`, 'error');
   }
 
   /**

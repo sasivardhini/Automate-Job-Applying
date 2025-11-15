@@ -57,7 +57,11 @@ const QUESTION_PATTERNS = {
   CLEARANCE: /security.*clearance|clearance/i,
   CURRENT_EMPLOYER: /current.*employer|currently.*work/i,
   MANAGE_TEAM: /manage.*team|team.*size|people.*manage/i,
-  REMOTE_WORK: /remote.*work|work.*remote|work.*home/i
+  REMOTE_WORK: /remote.*work|work.*remote|work.*home/i,
+  IIT_GRADUATE: /IIT|indian institute of technology|graduate.*IIT|current student.*IIT/i,
+  COMFORTABLE_SCHEDULE: /comfortable.*schedule|comfortable.*hours|comfortable.*full-time|comfortable.*8 hours/i,
+  PRIOR_EXPERIENCE: /prior.*experience|prior.*internship|previous.*experience|work experience/i,
+  INTERNSHIP_EXPERIENCE: /internship.*experience|any.*internship/i
 };
 
 // Default settings
