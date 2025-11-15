@@ -11,6 +11,26 @@ class LinkedInEasyApplyBot {
     this.currentJobIndex = 0;
     this.retryCount = 0;
     this.maxRetries = 3;
+
+    // ADVANCED: Analytics and tracking
+    this.analytics = {
+      totalAttempts: 0,
+      successfulApplications: 0,
+      failedApplications: 0,
+      skippedJobs: 0,
+      averageTimePerJob: 0,
+      totalTimeSpent: 0,
+      formComplexityScores: [],
+      errorTypes: {}
+    };
+
+    // ADVANCED: Exponential backoff configuration
+    this.retryConfig = {
+      baseDelay: 2000, // Start with 2 seconds
+      maxDelay: 30000, // Max 30 seconds
+      multiplier: 2    // Double each time
+    };
+
     this.init();
   }
 
@@ -144,21 +164,29 @@ class LinkedInEasyApplyBot {
   async searchAndApply() {
     log('Search & Apply clicked', 'info');
 
-    // CRITICAL: Check if session is expired first
-    if (this.detectSessionExpired()) {
-      return;
+    // CRITICAL: Prevent multiple simultaneous clicks
+    const searchBtn = document.getElementById('search-and-apply-btn');
+    if (searchBtn) {
+      searchBtn.disabled = true;
+      searchBtn.textContent = '⏳ Processing...';
     }
 
-    // RELOAD profile to get latest data
-    await this.loadData();
-    log(`Profile reloaded: Job Title = "${this.profile.jobTitle}"`, 'info');
+    try {
+      // CRITICAL: Check if session is expired first
+      if (this.detectSessionExpired()) {
+        return;
+      }
 
-    // Check if profile has job title
-    if (!this.profile.jobTitle || this.profile.jobTitle.trim() === '') {
-      showNotification('Please fill your Job Title in the Profile tab first!', 'error');
-      this.addActivityLog('❌ Please set Job Title first', 'error');
-      return;
-    }
+      // RELOAD profile to get latest data
+      await this.loadData();
+      log(`Profile reloaded: Job Title = "${this.profile.jobTitle}"`, 'info');
+
+      // Check if profile has job title
+      if (!this.profile.jobTitle || this.profile.jobTitle.trim() === '') {
+        showNotification('Please fill your Job Title in the Profile tab first!', 'error');
+        this.addActivityLog('❌ Please set Job Title first', 'error');
+        return;
+      }
 
     showNotification(`Searching for "${this.profile.jobTitle}"...`, 'info');
     this.updateStatus('Navigating to search...');
@@ -190,10 +218,24 @@ class LinkedInEasyApplyBot {
       }
     }
 
-    // Navigate to search results
-    const url = `https://www.linkedin.com/jobs/search/?${searchParams.toString()}`;
-    log(`Navigating to: ${url}`, 'info');
-    window.location.href = url;
+      // Navigate to search results
+      const url = `https://www.linkedin.com/jobs/search/?${searchParams.toString()}`;
+      log(`Navigating to: ${url}`, 'info');
+      window.location.href = url;
+
+    } catch (error) {
+      log(`Error in searchAndApply: ${error.message}`, 'error');
+      this.addActivityLog(`❌ Error: ${error.message}`, 'error');
+      showNotification('Error starting search', 'error');
+    } finally {
+      // Re-enable button if we didn't navigate away
+      setTimeout(() => {
+        if (searchBtn) {
+          searchBtn.disabled = false;
+          searchBtn.textContent = '🔍 Search & Apply';
+        }
+      }, 2000); // Wait 2 seconds before re-enabling
+    }
   }
 
   /**
@@ -929,7 +971,14 @@ class LinkedInEasyApplyBot {
         pageText.includes('your application will be discarded') ||
         pageText.includes('Any uploaded files will not be saved')) {
 
-      log('🚨 DETECTED "Save application" dialog - AGGRESSIVE HANDLING...', 'warn');
+      // CRITICAL: Only handle if we're NOT actively filling an application
+      // If application is in progress and user hasn't clicked stop, KEEP the dialog open!
+      if (this.applicationInProgress && this.settings.autoApply) {
+        log('ℹ️  "Save application" dialog detected, but application IN PROGRESS - IGNORING for now', 'info');
+        return false; // Don't handle it yet!
+      }
+
+      log('🚨 DETECTED "Save application" dialog - DISCARDING (application stopped or complete)...', 'warn');
 
       // Find ALL possible modals
       const modalSelectors = [
