@@ -66,6 +66,47 @@ function setupEventListeners() {
       document.querySelector('.tab-btn[data-tab="profile"]').click();
     });
   }
+
+  // Load Test Data button - for quick testing
+  const loadTestDataBtn = document.getElementById('loadTestData');
+  if (loadTestDataBtn) {
+    loadTestDataBtn.addEventListener('click', () => {
+      loadTestData();
+    });
+  }
+}
+
+/**
+ * Load test data into profile form - ONE CLICK FILL!
+ */
+function loadTestData() {
+  // Personal Information
+  document.getElementById('firstName').value = 'Sasivardhini';
+  document.getElementById('lastName').value = 'S';
+  document.getElementById('email').value = 'sasivardhinisrinivasan@gmail.com';
+  document.getElementById('phone').value = '9345190806';
+  document.getElementById('linkedinUrl').value = 'https://linkedin.com/in/yourprofile';
+  document.getElementById('websiteUrl').value = 'https://yourwebsite.com';
+
+  // Common Questions
+  document.getElementById('yearsExperience').value = '1';
+  document.getElementById('workAuthorization').value = 'No';
+  document.getElementById('requireSponsorship').value = 'Yes';
+  document.getElementById('expectedSalary').value = '';
+  document.getElementById('noticePeriod').value = '';
+  document.getElementById('willingToRelocate').value = '';
+
+  // Job Search Preferences
+  document.getElementById('jobTitle').value = 'Data Engineer';
+  document.getElementById('jobLocation').value = '';
+  document.getElementById('jobType').value = 'remote';
+  document.getElementById('experienceLevel').value = '';
+
+  // Show success message
+  alert('✅ Test data loaded! Now click "Save Profile" to save it.');
+
+  // Scroll to top to see the filled data
+  document.querySelector('.tab-content.active').scrollTop = 0;
 }
 
 /**
