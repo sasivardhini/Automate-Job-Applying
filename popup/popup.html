@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LinkedIn Easy Apply Bot</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <div class="header">
+      <h1>🤖 Easy Apply Bot</h1>
+      <p class="subtitle">Automate your job applications</p>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
+      <button class="tab-btn" data-tab="profile">Profile</button>
+      <button class="tab-btn" data-tab="settings">Settings</button>
+    </div>
+
+    <!-- Dashboard Tab -->
+    <div class="tab-content active" id="dashboard">
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-value" id="stat-total">0</div>
+          <div class="stat-label">Total Applications</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="stat-today">0</div>
+          <div class="stat-label">Applied Today</div>
+        </div>
+        <div class="stat-card success">
+          <div class="stat-value" id="stat-applied">0</div>
+          <div class="stat-label">Successful</div>
+        </div>
+        <div class="stat-card error">
+          <div class="stat-value" id="stat-failed">0</div>
+          <div class="stat-label">Failed</div>
+        </div>
+      </div>
+
+      <div class="action-buttons">
+        <button class="btn btn-primary" id="apply-now-btn">
+          Apply to Current Job
+        </button>
+        <button class="btn btn-secondary" id="export-btn">
+          Export Applications
+        </button>
+        <button class="btn btn-danger" id="clear-btn">
+          Clear History
+        </button>
+      </div>
+
+      <div class="recent-applications">
+        <h3>Recent Applications</h3>
+        <div id="applications-list" class="applications-list">
+          <!-- Applications will be inserted here -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Profile Tab -->
+    <div class="tab-content" id="profile">
+      <form id="profile-form">
+        <div class="form-section">
+          <h3>Personal Information</h3>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="firstName">First Name *</label>
+              <input type="text" id="firstName" name="firstName" required>
+            </div>
+            <div class="form-group">
+              <label for="lastName">Last Name *</label>
+              <input type="text" id="lastName" name="lastName" required>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="email">Email *</label>
+            <input type="email" id="email" name="email" required>
+          </div>
+
+          <div class="form-group">
+            <label for="phone">Phone Number *</label>
+            <input type="tel" id="phone" name="phone" required>
+          </div>
+
+          <div class="form-group">
+            <label for="linkedinUrl">LinkedIn URL</label>
+            <input type="url" id="linkedinUrl" name="linkedinUrl" placeholder="https://linkedin.com/in/yourprofile">
+          </div>
+
+          <div class="form-group">
+            <label for="websiteUrl">Website/Portfolio URL</label>
+            <input type="url" id="websiteUrl" name="websiteUrl" placeholder="https://yourwebsite.com">
+          </div>
+        </div>
+
+        <div class="form-section">
+          <h3>Common Questions</h3>
+
+          <div class="form-group">
+            <label for="yearsExperience">Years of Experience</label>
+            <input type="number" id="yearsExperience" name="yearsExperience" min="0" max="50">
+          </div>
+
+          <div class="form-group">
+            <label for="workAuthorization">Work Authorization</label>
+            <select id="workAuthorization" name="workAuthorization">
+              <option value="">Select...</option>
+              <option value="Yes">Yes, I am authorized to work</option>
+              <option value="No">No, I am not authorized</option>
+              <option value="US Citizen">US Citizen</option>
+              <option value="Green Card">Green Card Holder</option>
+              <option value="H1B">H1B Visa</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="requireSponsorship">Require Sponsorship</label>
+            <select id="requireSponsorship" name="requireSponsorship">
+              <option value="">Select...</option>
+              <option value="Yes">Yes</option>
+              <option value="No">No</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="expectedSalary">Expected Salary (Annual)</label>
+            <input type="text" id="expectedSalary" name="expectedSalary" placeholder="e.g., 80000">
+          </div>
+
+          <div class="form-group">
+            <label for="noticePeriod">Notice Period</label>
+            <input type="text" id="noticePeriod" name="noticePeriod" placeholder="e.g., 2 weeks, Immediate">
+          </div>
+
+          <div class="form-group">
+            <label for="willingToRelocate">Willing to Relocate</label>
+            <select id="willingToRelocate" name="willingToRelocate">
+              <option value="">Select...</option>
+              <option value="Yes">Yes</option>
+              <option value="No">No</option>
+            </select>
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-block">Save Profile</button>
+      </form>
+    </div>
+
+    <!-- Settings Tab -->
+    <div class="tab-content" id="settings">
+      <form id="settings-form">
+        <div class="form-section">
+          <h3>Application Settings</h3>
+
+          <div class="form-group">
+            <label class="checkbox-label">
+              <input type="checkbox" id="autoApply" name="autoApply">
+              <span>Enable Auto-Apply</span>
+            </label>
+            <small>Automatically apply to jobs when on LinkedIn</small>
+          </div>
+
+          <div class="form-group">
+            <label class="checkbox-label">
+              <input type="checkbox" id="skipApplied" name="skipApplied">
+              <span>Skip Already Applied Jobs</span>
+            </label>
+            <small>Don't apply to jobs you've already applied to</small>
+          </div>
+
+          <div class="form-group">
+            <label class="checkbox-label">
+              <input type="checkbox" id="notifications" name="notifications">
+              <span>Enable Notifications</span>
+            </label>
+            <small>Show notifications for applications</small>
+          </div>
+
+          <div class="form-group">
+            <label for="maxApplicationsPerDay">Daily Application Limit</label>
+            <input type="number" id="maxApplicationsPerDay" name="maxApplicationsPerDay" min="1" max="200" value="50">
+            <small>Maximum applications per day (recommended: 50)</small>
+          </div>
+
+          <div class="form-group">
+            <label for="applyDelay">Delay Between Actions (ms)</label>
+            <input type="number" id="applyDelay" name="applyDelay" min="500" max="10000" step="100" value="2000">
+            <small>Time to wait between form actions (recommended: 2000ms)</small>
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-block">Save Settings</button>
+      </form>
+
+      <div class="form-section">
+        <h3>About</h3>
+        <p class="about-text">
+          LinkedIn Easy Apply Bot v1.0.0<br>
+          Automates LinkedIn Easy Apply job applications with smart form filling and tracking.
+        </p>
+        <p class="about-text">
+          <strong>How to use:</strong><br>
+          1. Fill in your profile information<br>
+          2. Navigate to LinkedIn Jobs<br>
+          3. Enable Auto-Apply or click "Apply to Current Job"<br>
+          4. Track your applications in the Dashboard
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
