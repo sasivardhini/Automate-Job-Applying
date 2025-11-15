@@ -15,7 +15,23 @@ class LinkedInEasyApplyBot {
   }
 
   async init() {
-    log('LinkedIn Easy Apply Bot initialized - Advanced Mode', 'success');
+    log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'info');
+    log('🤖 LinkedIn Easy Apply Bot - v2.0 Advanced Mode', 'success');
+    log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'info');
+
+    // Show current page info
+    const currentUrl = window.location.href;
+    log(`📍 Current URL: ${currentUrl}`, 'info');
+
+    if (currentUrl.includes('/jobs/search')) {
+      log('✅ On LinkedIn Jobs Search page', 'success');
+    } else if (currentUrl.includes('/jobs/view')) {
+      log('ℹ️  On a single job view page', 'info');
+    } else if (currentUrl.includes('/jobs')) {
+      log('ℹ️  On LinkedIn Jobs section', 'info');
+    } else {
+      log('⚠️  NOT on LinkedIn Jobs page - bot may not work', 'warn');
+    }
 
     // Load profile and settings
     await this.loadData();
@@ -116,11 +132,13 @@ class LinkedInEasyApplyBot {
     // Check if profile has job title
     if (!this.profile.jobTitle || this.profile.jobTitle.trim() === '') {
       showNotification('Please fill your Job Title in the Profile tab first!', 'error');
+      this.addActivityLog('❌ Please set Job Title first', 'error');
       return;
     }
 
     showNotification(`Searching for "${this.profile.jobTitle}"...`, 'info');
     this.updateStatus('Navigating to search...');
+    this.addActivityLog(`Searching: "${this.profile.jobTitle}"`, 'info');
 
     // Build LinkedIn search URL
     const searchParams = new URLSearchParams();
@@ -142,6 +160,7 @@ class LinkedInEasyApplyBot {
       };
       if (jobTypeMap[this.profile.jobType]) {
         const url = `https://www.linkedin.com/jobs/search/?${searchParams.toString()}&${jobTypeMap[this.profile.jobType]}`;
+        log(`Navigating to: ${url}`, 'info');
         window.location.href = url;
         return;
       }
@@ -342,8 +361,24 @@ class LinkedInEasyApplyBot {
     const jobCards = this.findJobCards();
 
     if (jobCards.length === 0) {
-      log('❌ No job cards found on page', 'warn');
-      this.addActivityLog('No job cards found', 'warn');
+      log('❌ No job cards found, checking for single job page...', 'warn');
+
+      // Try single job page mode - look for Easy Apply on current page
+      const singleJobButton = this.findEasyApplyButtonInJobDetails();
+      if (singleJobButton) {
+        log('✅ Found Easy Apply button on single job page!', 'success');
+        this.addActivityLog('Single job - applying...', 'info');
+
+        const jobDetails = extractJobDetails();
+        if (jobDetails && jobDetails.jobId) {
+          await this.applyToJob(singleJobButton, jobDetails);
+          return true;
+        }
+      }
+
+      log('❌ No jobs found - please navigate to LinkedIn job search', 'error');
+      this.addActivityLog('No jobs found - go to job search page', 'error');
+      showNotification('Please go to LinkedIn job search page', 'error');
       return false;
     }
 
@@ -415,23 +450,63 @@ class LinkedInEasyApplyBot {
   }
 
   /**
-   * Find job cards on the page
+   * Find job cards on the page - COMPREHENSIVE VERSION
    */
   findJobCards() {
+    log('🔍 DEBUG: Searching for job cards with multiple selectors...', 'info');
+
+    // Try many different selectors for LinkedIn's various layouts
     const jobListSelectors = [
+      // Standard job search results
       '.jobs-search-results__list li',
+      '.jobs-search-results__list-item',
+      'ul.jobs-search-results__list > li',
+
+      // Scaffold layout (newer LinkedIn design)
       '.scaffold-layout__list-container li',
-      'ul.jobs-search-results__list > li'
+      '.scaffold-layout__list li',
+
+      // Job cards by class
+      '.job-card-container',
+      '.job-card-list',
+      'li[class*="job-card"]',
+      'li[class*="jobs-search"]',
+
+      // Generic list items in jobs area
+      'ul[class*="jobs"] li',
+      'div[class*="jobs-search"] li',
+
+      // Very broad fallback
+      'li[data-occludable-job-id]',
+      'li[data-job-id]'
     ];
 
     for (const selector of jobListSelectors) {
-      const cards = document.querySelectorAll(selector);
-      if (cards.length > 0) {
-        log(`Found ${cards.length} job cards using selector: ${selector}`, 'info');
-        return Array.from(cards);
+      try {
+        const cards = document.querySelectorAll(selector);
+        if (cards.length > 0) {
+          log(`✅ Found ${cards.length} job cards using selector: "${selector}"`, 'success');
+          this.addActivityLog(`Found ${cards.length} job cards`, 'success');
+          return Array.from(cards);
+        } else {
+          log(`  ⚠️  No cards with selector: "${selector}"`, 'info');
+        }
+      } catch (e) {
+        log(`  ❌ Error with selector "${selector}": ${e.message}`, 'warn');
       }
     }
 
+    // FALLBACK: Check if we're on a single job page
+    log('⚠️  No job cards found, checking if this is a single job page...', 'warn');
+    const singleJobPage = document.querySelector('.jobs-details, .jobs-unified-top-card');
+    if (singleJobPage) {
+      log('ℹ️  This appears to be a single job page, not a search results page', 'info');
+      this.addActivityLog('Single job page detected', 'warn');
+      return []; // Will trigger single job mode
+    }
+
+    log('❌ Could not find any job cards on this page', 'error');
+    this.addActivityLog('No jobs found - wrong page?', 'error');
     return [];
   }
 
