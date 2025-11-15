@@ -32,12 +32,35 @@
 .easy-apply-status {
   font-size: 13px;
   color: #333;
-  margin-bottom: 8px;
+  margin-bottom: 12px;
 }
 
 #easy-apply-status {
   font-weight: 600;
   color: #0073b1;
+}
+
+.easy-apply-search-btn {
+  width: 100%;
+  background: #28a745;
+  color: white;
+  border: none;
+  padding: 10px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-top: 8px;
+}
+
+.easy-apply-search-btn:hover {
+  background: #218838;
+  transform: scale(1.02);
+}
+
+.easy-apply-search-btn:active {
+  transform: scale(0.98);
 }
 
 .easy-apply-btn {

@@ -62,6 +62,7 @@ class LinkedInEasyApplyBot {
       </div>
       <div class="easy-apply-panel-body">
         <div class="easy-apply-status">Status: <span id="easy-apply-status">Idle</span></div>
+        <button id="search-and-apply-btn" class="easy-apply-search-btn">🔍 Search & Apply</button>
       </div>
     `;
 
@@ -71,6 +72,57 @@ class LinkedInEasyApplyBot {
     document.getElementById('easy-apply-toggle').addEventListener('click', () => {
       this.toggleAutoApply();
     });
+
+    // Add search button listener
+    document.getElementById('search-and-apply-btn').addEventListener('click', () => {
+      this.searchAndApply();
+    });
+  }
+
+  /**
+   * Search LinkedIn and start applying
+   */
+  async searchAndApply() {
+    log('Search & Apply clicked', 'info');
+
+    // Check if profile has job title
+    if (!this.profile.jobTitle || this.profile.jobTitle.trim() === '') {
+      showNotification('Please fill your Job Title in the Profile tab first!', 'error');
+      return;
+    }
+
+    showNotification(`Searching for "${this.profile.jobTitle}"...`, 'info');
+    this.updateStatus('Navigating to search...');
+
+    // Build LinkedIn search URL
+    const searchParams = new URLSearchParams();
+    searchParams.set('keywords', this.profile.jobTitle);
+
+    if (this.profile.jobLocation) {
+      searchParams.set('location', this.profile.jobLocation);
+    }
+
+    // Add Easy Apply filter
+    searchParams.set('f_AL', 'true'); // Easy Apply filter
+
+    // Add job type filter
+    if (this.profile.jobType) {
+      const jobTypeMap = {
+        'remote': 'f_WT=2',
+        'on-site': 'f_WT=1',
+        'hybrid': 'f_WT=3'
+      };
+      if (jobTypeMap[this.profile.jobType]) {
+        const url = `https://www.linkedin.com/jobs/search/?${searchParams.toString()}&${jobTypeMap[this.profile.jobType]}`;
+        window.location.href = url;
+        return;
+      }
+    }
+
+    // Navigate to search results
+    const url = `https://www.linkedin.com/jobs/search/?${searchParams.toString()}`;
+    log(`Navigating to: ${url}`, 'info');
+    window.location.href = url;
   }
 
   /**
@@ -488,18 +540,42 @@ class LinkedInEasyApplyBot {
    */
   findSafeActionButton() {
     const modal = document.querySelector('.jobs-easy-apply-modal, [data-test-modal]');
-    if (!modal) return null;
+    if (!modal) {
+      log('No modal found for safe button search', 'warn');
+      return null;
+    }
 
     const buttons = modal.querySelectorAll('button');
-    const avoidTexts = ['save', 'preferences', 'match', 'cancel', 'close', 'back'];
+    // EXPANDED avoid list - same as findButtonAdvanced
+    const avoidTexts = [
+      'save',
+      'preferences',
+      'preference',
+      'match',
+      'matching',
+      'cancel',
+      'close',
+      'back',
+      'dismiss',
+      'skip',
+      'later',
+      'filter',
+      'filters',
+      'sort',
+      'view',
+      'see',
+      'show'
+    ];
 
+    // Try to find primary button first
     for (const button of buttons) {
       if (button.disabled) continue;
 
-      const buttonText = (button.textContent || button.getAttribute('aria-label') || '').toLowerCase();
+      const buttonText = (button.textContent || button.getAttribute('aria-label') || '').toLowerCase().trim();
 
       // Skip buttons we want to avoid
       if (avoidTexts.some(avoid => buttonText.includes(avoid))) {
+        log(`Skipping unsafe button: "${buttonText}"`, 'warn');
         continue;
       }
 
@@ -508,6 +584,7 @@ class LinkedInEasyApplyBot {
       if (style.display !== 'none' && style.visibility !== 'hidden') {
         // Prefer primary buttons
         if (button.classList.contains('artdeco-button--primary')) {
+          log(`Found safe primary button: "${buttonText}"`, 'info');
           return button;
         }
       }
@@ -517,7 +594,7 @@ class LinkedInEasyApplyBot {
     for (const button of buttons) {
       if (button.disabled) continue;
 
-      const buttonText = (button.textContent || button.getAttribute('aria-label') || '').toLowerCase();
+      const buttonText = (button.textContent || button.getAttribute('aria-label') || '').toLowerCase().trim();
 
       if (avoidTexts.some(avoid => buttonText.includes(avoid))) {
         continue;
@@ -525,10 +602,12 @@ class LinkedInEasyApplyBot {
 
       const style = window.getComputedStyle(button);
       if (style.display !== 'none' && style.visibility !== 'hidden') {
+        log(`Found safe button: "${buttonText}"`, 'info');
         return button;
       }
     }
 
+    log('No safe button found', 'warn');
     return null;
   }
 
@@ -563,21 +642,44 @@ class LinkedInEasyApplyBot {
    * Find buttons with advanced logic (IMPROVED - avoids wrong buttons)
    */
   findButtonAdvanced(textOptions) {
-    // Words to avoid in buttons
-    const avoidWords = ['preferences', 'match', 'save', 'cancel', 'back'];
+    // Words to STRICTLY avoid in buttons - EXPANDED LIST
+    const avoidWords = [
+      'preferences',
+      'preference',
+      'match',
+      'matching',
+      'save',
+      'cancel',
+      'back',
+      'dismiss',
+      'skip',
+      'later',
+      'filter',
+      'filters',
+      'sort',
+      'view',
+      'see',
+      'show'
+    ];
 
-    // Only search within the Easy Apply modal
+    // Only search within the Easy Apply modal (STRICT)
     const modal = document.querySelector('.jobs-easy-apply-modal, [data-test-modal], .artdeco-modal');
-    const searchArea = modal || document;
 
-    const allButtons = searchArea.querySelectorAll('button, [role="button"], input[type="submit"]');
+    // If no modal, don't search at all to avoid clicking wrong buttons
+    if (!modal) {
+      log('No Easy Apply modal found, skipping button search', 'warn');
+      return null;
+    }
+
+    const allButtons = modal.querySelectorAll('button, [role="button"], input[type="submit"]');
 
     for (const button of allButtons) {
       const buttonText = (button.textContent || button.getAttribute('aria-label') || button.value || '').toLowerCase().trim();
 
-      // Skip if button contains words we want to avoid
+      // STRICT: Skip if button contains ANY avoid words
       const shouldAvoid = avoidWords.some(word => buttonText.includes(word));
       if (shouldAvoid) {
+        log(`Skipping button with avoided word: "${buttonText}"`, 'warn');
         continue;
       }
 
@@ -587,13 +689,14 @@ class LinkedInEasyApplyBot {
           // Make sure it's visible and not disabled
           const style = window.getComputedStyle(button);
           if (style.display !== 'none' && style.visibility !== 'hidden' && !button.disabled) {
-            log(`Found button: "${buttonText}" for search: "${text}"`, 'info');
+            log(`✅ Found button: "${buttonText}" for search: "${text}"`, 'success');
             return button;
           }
         }
       }
     }
 
+    log(`No button found for: ${textOptions.join(', ')}`, 'warn');
     return null;
   }
 

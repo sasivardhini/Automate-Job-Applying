@@ -27,10 +27,10 @@
       <div class="quick-start-guide" id="quick-start-guide">
         <h3>📋 Quick Start Guide</h3>
         <ol class="start-steps">
-          <li>✅ Fill your profile in the "Profile" tab</li>
-          <li>🔍 Go to <a href="https://www.linkedin.com/jobs/" target="_blank">LinkedIn Jobs</a></li>
-          <li>🎯 Search for jobs you want to apply to</li>
-          <li>🚀 Click the "Start" button on the page</li>
+          <li>✅ Fill your profile in the "Profile" tab (including Job Title)</li>
+          <li>🔍 Go to <a href="https://www.linkedin.com/jobs/" target="_blank">LinkedIn</a></li>
+          <li>🎯 Click "🔍 Search & Apply" button on the page</li>
+          <li>🚀 Bot will search and start applying automatically!</li>
         </ol>
         <button class="btn btn-primary" id="goto-profile-btn">Fill Profile Now →</button>
       </div>
@@ -157,6 +157,45 @@
               <option value="">Select...</option>
               <option value="Yes">Yes</option>
               <option value="No">No</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <h3>Job Search Preferences</h3>
+
+          <div class="form-group">
+            <label for="jobTitle">Job Title / Keywords *</label>
+            <input type="text" id="jobTitle" name="jobTitle" placeholder="e.g., Software Engineer, Data Analyst" required>
+            <small>The bot will search for jobs with these keywords</small>
+          </div>
+
+          <div class="form-group">
+            <label for="jobLocation">Location</label>
+            <input type="text" id="jobLocation" name="jobLocation" placeholder="e.g., United States, Remote">
+            <small>Leave blank for all locations</small>
+          </div>
+
+          <div class="form-group">
+            <label for="jobType">Job Type</label>
+            <select id="jobType" name="jobType">
+              <option value="">Any</option>
+              <option value="remote">Remote</option>
+              <option value="on-site">On-site</option>
+              <option value="hybrid">Hybrid</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="experienceLevel">Experience Level</label>
+            <select id="experienceLevel" name="experienceLevel">
+              <option value="">Any</option>
+              <option value="Internship">Internship</option>
+              <option value="Entry level">Entry level</option>
+              <option value="Associate">Associate</option>
+              <option value="Mid-Senior level">Mid-Senior level</option>
+              <option value="Director">Director</option>
+              <option value="Executive">Executive</option>
             </select>
           </div>
         </div>

@@ -78,8 +78,8 @@ async function checkProfileStatus() {
       const profile = response.data;
       const quickStartGuide = document.getElementById('quick-start-guide');
 
-      // Check if essential fields are filled
-      const isProfileFilled = profile.firstName && profile.lastName && profile.email && profile.phone;
+      // Check if essential fields are filled (including job title for search)
+      const isProfileFilled = profile.firstName && profile.lastName && profile.email && profile.phone && profile.jobTitle;
 
       if (isProfileFilled && quickStartGuide) {
         quickStartGuide.style.display = 'none';
@@ -168,6 +168,12 @@ async function loadProfile() {
       document.getElementById('expectedSalary').value = profile.expectedSalary || '';
       document.getElementById('noticePeriod').value = profile.noticePeriod || '';
       document.getElementById('willingToRelocate').value = profile.willingToRelocate || '';
+
+      // Job search preferences
+      document.getElementById('jobTitle').value = profile.jobTitle || '';
+      document.getElementById('jobLocation').value = profile.jobLocation || '';
+      document.getElementById('jobType').value = profile.jobType || '';
+      document.getElementById('experienceLevel').value = profile.experienceLevel || '';
     }
   } catch (error) {
     console.error('Error loading profile:', error);
@@ -191,7 +197,12 @@ async function saveProfile() {
       requireSponsorship: document.getElementById('requireSponsorship').value,
       expectedSalary: document.getElementById('expectedSalary').value,
       noticePeriod: document.getElementById('noticePeriod').value,
-      willingToRelocate: document.getElementById('willingToRelocate').value
+      willingToRelocate: document.getElementById('willingToRelocate').value,
+      // Job search preferences
+      jobTitle: document.getElementById('jobTitle').value,
+      jobLocation: document.getElementById('jobLocation').value,
+      jobType: document.getElementById('jobType').value,
+      experienceLevel: document.getElementById('experienceLevel').value
     };
 
     const response = await chrome.runtime.sendMessage({
@@ -201,6 +212,8 @@ async function saveProfile() {
 
     if (response.success) {
       showSuccessMessage('Profile saved successfully!');
+      // Hide quick start guide after saving
+      await checkProfileStatus();
     }
   } catch (error) {
     console.error('Error saving profile:', error);
