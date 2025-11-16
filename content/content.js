@@ -203,6 +203,9 @@ class LinkedInEasyApplyBot {
     // Add Easy Apply filter
     searchParams.set('f_AL', 'true'); // Easy Apply filter
 
+    // CRITICAL: Add "Past 24 hours" date filter
+    searchParams.set('f_TPR', 'r86400'); // Posted in last 24 hours (86400 seconds)
+
     // Add job type filter
     if (this.profile.jobType) {
       const jobTypeMap = {
@@ -853,10 +856,34 @@ class LinkedInEasyApplyBot {
         }
       }
 
-      // Look for Submit button (final step)
+      // CRITICAL: Check buttons in correct order: Review → Next → Submit
+      // This ensures we don't try to submit before reviewing
+
+      // Look for Review button FIRST (appears before final submission)
+      const reviewButton = this.findButtonAdvanced(['Review', 'Review your application', 'review']);
+      if (reviewButton && !reviewButton.disabled && !reviewButton.getAttribute('aria-disabled')) {
+        log('Found REVIEW button, clicking...', 'info');
+        this.addActivityLog('📋 Clicking Review button...', 'info');
+        await clickElement(reviewButton, 2000);
+        currentStep++;
+        continue;
+      }
+
+      // Look for Next/Continue button SECOND (multi-step forms)
+      const nextButton = this.findButtonAdvanced(['Next', 'Continue', 'next', 'continue']);
+      if (nextButton && !nextButton.disabled && !nextButton.getAttribute('aria-disabled')) {
+        log('Found NEXT button, moving to next step...', 'info');
+        this.addActivityLog('➡️ Clicking Next button...', 'info');
+        await clickElement(nextButton, 2000);
+        currentStep++;
+        continue;
+      }
+
+      // Look for Submit button LAST (final step after review)
       const submitButton = this.findButtonAdvanced(['Submit application', 'Submit', 'submit']);
       if (submitButton && !submitButton.disabled) {
         log('Found SUBMIT button - Submitting application!', 'success');
+        this.addActivityLog('📤 Submitting application...', 'success');
         await clickElement(submitButton, 3000);
 
         // Wait to confirm submission
@@ -867,26 +894,6 @@ class LinkedInEasyApplyBot {
           log('Application submitted successfully!', 'success');
           return true;
         }
-      }
-
-      // Look for Review button
-      const reviewButton = this.findButtonAdvanced(['Review', 'Review your application', 'review']);
-      if (reviewButton && !reviewButton.disabled && !reviewButton.getAttribute('aria-disabled')) {
-        log('Found REVIEW button, clicking...', 'info');
-        this.addActivityLog('Clicking Review button...', 'info');
-        await clickElement(reviewButton, 2000);
-        currentStep++;
-        continue;
-      }
-
-      // Look for Next/Continue button
-      const nextButton = this.findButtonAdvanced(['Next', 'Continue', 'next', 'continue']);
-      if (nextButton && !nextButton.disabled && !nextButton.getAttribute('aria-disabled')) {
-        log('Found NEXT button, moving to next step...', 'info');
-        this.addActivityLog('Clicking Next button...', 'info');
-        await clickElement(nextButton, 2000);
-        currentStep++;
-        continue;
       }
 
       // Check if there are required fields preventing progress
