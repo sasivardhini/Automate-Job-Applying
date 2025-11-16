@@ -1641,6 +1641,10 @@ class LinkedInEasyApplyBot {
     const allInputs = formContainer.querySelectorAll('input:not([type="hidden"]), select, textarea');
     log(`Found ${allInputs.length} total form fields`, 'info');
 
+    // CRITICAL: Also find custom LinkedIn dropdowns (div/button-based)
+    const customDropdowns = formContainer.querySelectorAll('[role="combobox"], button[aria-expanded], .artdeco-dropdown, [data-test-text-entity-list-form-select]');
+    log(`Found ${customDropdowns.length} custom dropdowns`, 'info');
+
     for (const field of allInputs) {
       const fieldType = field.tagName.toLowerCase();
       const inputType = field.type;
@@ -1681,6 +1685,16 @@ class LinkedInEasyApplyBot {
       }
     }
 
+    // CRITICAL: Handle custom LinkedIn dropdowns
+    for (const dropdown of customDropdowns) {
+      try {
+        await this.fillCustomDropdown(dropdown);
+        await sleep(randomDelay(100, 200));
+      } catch (error) {
+        log(`Error filling custom dropdown: ${error.message}`, 'warn');
+      }
+    }
+
     log('Finished filling form fields', 'success');
   }
 
@@ -1710,11 +1724,13 @@ class LinkedInEasyApplyBot {
 
     let value = '';
 
+    // PRIORITY 1: Use question type if detected
     if (questionType) {
       value = await Storage.getAnswerForQuestion(questionType, this.profile);
+      log(`  Detected question type: ${questionType}, value: "${value}"`, 'info');
     }
 
-    // Field-specific mappings
+    // PRIORITY 2: Field-specific mappings (only if value not already set)
     const lowerLabel = (label || fieldName).toLowerCase();
 
     if (!value) {
@@ -1899,6 +1915,169 @@ class LinkedInEasyApplyBot {
     }
 
     log(`  ❌ ERROR: Dropdown has NO options at all!`, 'error');
+  }
+
+  /**
+   * Fill custom LinkedIn dropdown (div/button-based, not native <select>)
+   * CRITICAL: LinkedIn uses custom dropdowns with aria-expanded and role="listbox"
+   */
+  async fillCustomDropdown(dropdown) {
+    // Get label for this dropdown
+    const label = getFieldLabel(dropdown);
+    if (!label) {
+      log('  ⚠️  No label found for custom dropdown, trying to fill anyway...', 'warn');
+    }
+
+    log(`📝 Filling CUSTOM dropdown: ${label || 'unlabeled'}`, 'info');
+
+    // Check if already has a value selected (look for selected text)
+    const selectedText = dropdown.textContent?.trim() || dropdown.innerText?.trim() || '';
+    const lowerSelected = selectedText.toLowerCase();
+
+    // Skip if already selected (not placeholder)
+    if (selectedText &&
+        !lowerSelected.includes('select') &&
+        !lowerSelected.includes('choose') &&
+        selectedText !== '--' &&
+        selectedText.length > 0) {
+      log(`  ✓ Already selected: "${selectedText}"`, 'info');
+      return;
+    }
+
+    // Detect question type from label
+    const questionType = detectQuestionType(label || '');
+    let targetValue = null;
+
+    if (questionType) {
+      targetValue = await Storage.getAnswerForQuestion(questionType, this.profile);
+      log(`  Detected question type: ${questionType}, looking for: "${targetValue}"`, 'info');
+    }
+
+    // STEP 1: Click the dropdown to expand it
+    log(`  Clicking dropdown to expand...`, 'info');
+    dropdown.click();
+    await sleep(300); // Wait for dropdown to expand
+
+    // STEP 2: Find the options list
+    // LinkedIn typically shows options in a listbox with role="listbox"
+    const optionsListSelectors = [
+      '[role="listbox"]',
+      '.artdeco-dropdown__content',
+      '.artdeco-dropdown__content-inner',
+      '[data-test-dropdown-options]',
+      'ul[role="menu"]',
+      '.select-list'
+    ];
+
+    let optionsList = null;
+    for (const selector of optionsListSelectors) {
+      // Look for visible listbox in the document (may be in a portal/modal)
+      const lists = document.querySelectorAll(selector);
+      for (const list of lists) {
+        const style = window.getComputedStyle(list);
+        if (style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0') {
+          optionsList = list;
+          log(`  Found options list: ${selector}`, 'info');
+          break;
+        }
+      }
+      if (optionsList) break;
+    }
+
+    if (!optionsList) {
+      log(`  ❌ Could not find options list after expanding dropdown!`, 'error');
+      // Try to close the dropdown
+      dropdown.click();
+      return;
+    }
+
+    // STEP 3: Find all option elements
+    const optionElements = optionsList.querySelectorAll('[role="option"], li, .artdeco-dropdown__item, button');
+    log(`  Found ${optionElements.length} option elements`, 'info');
+
+    if (optionElements.length === 0) {
+      log(`  ❌ No option elements found in list!`, 'error');
+      dropdown.click(); // Close dropdown
+      return;
+    }
+
+    // Log all options for debugging
+    optionElements.forEach((opt, idx) => {
+      const text = (opt.textContent || opt.innerText || '').trim();
+      log(`    Option ${idx}: "${text}"`, 'info');
+    });
+
+    // STEP 4: Try to find matching option
+    if (targetValue) {
+      const targetLower = targetValue.toLowerCase().trim();
+
+      for (const option of optionElements) {
+        const optionText = (option.textContent || option.innerText || '').trim();
+        const optionLower = optionText.toLowerCase();
+
+        // Skip placeholder/empty options
+        if (!optionText ||
+            optionLower.includes('select an option') ||
+            optionLower.includes('choose') ||
+            optionText === '--') {
+          continue;
+        }
+
+        // AGGRESSIVE MATCHING: exact, contains, or partial word match
+        if (optionLower === targetLower ||
+            optionLower.includes(targetLower) ||
+            targetLower.includes(optionLower)) {
+          log(`  ✅ Found matching option: "${optionText}"`, 'success');
+          option.click();
+          await sleep(200);
+          return;
+        }
+      }
+
+      log(`  ⚠️ No match found for "${targetValue}", using fallback...`, 'warn');
+    }
+
+    // STEP 5: AGGRESSIVE FALLBACK - Select first non-placeholder option
+    for (const option of optionElements) {
+      const optionText = (option.textContent || option.innerText || '').trim();
+      const optionLower = optionText.toLowerCase();
+
+      // Skip placeholder options
+      if (!optionText ||
+          optionLower.includes('select an option') ||
+          optionLower.includes('select...') ||
+          optionLower.includes('choose') ||
+          optionText === '--' ||
+          optionText.length === 0) {
+        log(`    Skipping placeholder: "${optionText}"`, 'info');
+        continue;
+      }
+
+      // Select this option!
+      log(`  ✅ FALLBACK: Selecting first valid option: "${optionText}"`, 'success');
+      option.click();
+      await sleep(200);
+      return;
+    }
+
+    // STEP 6: ULTRA-AGGRESSIVE FALLBACK - Select ANY option (even if looks like placeholder)
+    if (optionElements.length > 1) {
+      const fallbackOption = optionElements[1]; // Skip first (likely placeholder)
+      const fallbackText = (fallbackOption.textContent || fallbackOption.innerText || '').trim();
+      log(`  ⚠️ ULTRA-FALLBACK: Selecting any option: "${fallbackText}"`, 'warn');
+      fallbackOption.click();
+      await sleep(200);
+      return;
+    } else if (optionElements.length === 1) {
+      const onlyOption = optionElements[0];
+      const onlyText = (onlyOption.textContent || onlyOption.innerText || '').trim();
+      log(`  ⚠️ ULTRA-FALLBACK: Selecting only option: "${onlyText}"`, 'warn');
+      onlyOption.click();
+      await sleep(200);
+      return;
+    }
+
+    log(`  ❌ ERROR: Could not select any option!`, 'error');
   }
 
   /**
