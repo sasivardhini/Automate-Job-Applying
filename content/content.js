@@ -424,9 +424,21 @@ class LinkedInEasyApplyBot {
         // Check again
         const retryApplied = await this.findAndApplyToNextJob();
         if (!retryApplied) {
-          log('No more jobs available, stopping...', 'warn');
-          showNotification('No more jobs to apply to on this page', 'info');
-          break;
+          // Try to go to next page
+          log('No more jobs on this page, trying to load next page...', 'info');
+          const nextPageLoaded = await this.loadNextPage();
+
+          if (nextPageLoaded) {
+            log('✅ Loaded next page, continuing...', 'success');
+            this.addActivityLog('📄 Moved to next page', 'success');
+            await sleep(2000);
+            continue;
+          } else {
+            log('No more pages available, stopping...', 'warn');
+            showNotification('Processed all available pages', 'info');
+            this.addActivityLog('✅ Completed all pages!', 'success');
+            break;
+          }
         }
       }
 
@@ -699,6 +711,75 @@ class LinkedInEasyApplyBot {
   }
 
   /**
+   * Load next page of job results - PAGINATION SUPPORT
+   */
+  async loadNextPage() {
+    log('🔍 Looking for pagination "Next" button...', 'info');
+
+    // LinkedIn pagination selectors
+    const paginationSelectors = [
+      'button[aria-label="Page 2"]',
+      'button[aria-label*="Next"]',
+      'button[aria-label*="next"]',
+      '.artdeco-pagination__button--next',
+      '.jobs-search-pagination__button--next',
+      'button[data-test-pagination-next]',
+      'li.selected + li button', // Next page number after current
+      '.artdeco-pagination li.active + li button'
+    ];
+
+    for (const selector of paginationSelectors) {
+      const nextButton = document.querySelector(selector);
+      if (nextButton && !nextButton.disabled && !nextButton.getAttribute('aria-disabled')) {
+        log(`✅ Found pagination next button: ${selector}`, 'success');
+
+        // Scroll to pagination
+        nextButton.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        await sleep(500);
+
+        // Click next button
+        log('Clicking pagination next button...', 'info');
+        nextButton.click();
+
+        // Wait for new page to load
+        await sleep(2000);
+
+        // Scroll to top to see new jobs
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        await sleep(1000);
+
+        return true;
+      }
+    }
+
+    // Try looking for page number buttons (2, 3, 4, 5, etc.)
+    const pageButtons = document.querySelectorAll('.artdeco-pagination__indicator button, .jobs-search-pagination button');
+    for (const button of pageButtons) {
+      const buttonText = button.textContent?.trim();
+      const pageNumber = parseInt(buttonText);
+
+      // Check if it's a number button and not the current page
+      if (!isNaN(pageNumber) && !button.classList.contains('selected') && !button.classList.contains('active')) {
+        log(`✅ Found page button: ${pageNumber}`, 'success');
+
+        button.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        await sleep(500);
+
+        button.click();
+        await sleep(2000);
+
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        await sleep(1000);
+
+        return true;
+      }
+    }
+
+    log('❌ No pagination button found (might be on last page)', 'warn');
+    return false;
+  }
+
+  /**
    * Apply to a job
    */
   async applyToJob(button, jobDetails) {
@@ -775,11 +856,13 @@ class LinkedInEasyApplyBot {
     let currentStep = 0;
     const maxSteps = 15;
     let lastFormState = '';
+    let stuckCounter = 0; // Track how many times we're stuck
+    const maxStuckAttempts = 3; // Skip job after 3 stuck attempts
 
     log('Starting advanced form processing...', 'info');
 
     while (currentStep < maxSteps) {
-      await sleep(randomDelay(500, 800)); // SPEED FIX: Reduced from 1500-2500
+      await sleep(randomDelay(300, 500)); // SPEED BOOST: Reduced from 500-800
 
       // CRITICAL: Check if user clicked STOP
       if (!this.settings.autoApply || !this.isRunning || !this.applicationInProgress) {
@@ -802,19 +885,31 @@ class LinkedInEasyApplyBot {
 
       // Check if we're stuck in a loop
       if (currentFormState === lastFormState && currentStep > 0) {
-        log('Form state unchanged, attempting recovery...', 'warn');
+        stuckCounter++;
+        log(`⚠️ Form state unchanged (stuck ${stuckCounter}/${maxStuckAttempts})`, 'warn');
+
+        // If stuck too many times, skip this job
+        if (stuckCounter >= maxStuckAttempts) {
+          log('❌ STUCK TOO LONG - Skipping this job!', 'error');
+          this.addActivityLog('⚠️ Skipped: Application stuck', 'error');
+          await this.closeModal();
+          return false;
+        }
 
         // Try clicking any enabled primary button (but not preferences/save)
         const anyButton = this.findSafeActionButton();
         if (anyButton) {
           log('Found safe action button, clicking...', 'info');
-          await clickElement(anyButton, 2000);
+          await clickElement(anyButton, 800); // SPEED BOOST: Reduced from 2000
           currentStep++;
           continue;
         } else {
           log('No action buttons found, form may be complete or stuck', 'warn');
           break;
         }
+      } else {
+        // Reset stuck counter if form state changed
+        stuckCounter = 0;
       }
 
       lastFormState = currentFormState;
@@ -826,7 +921,7 @@ class LinkedInEasyApplyBot {
       await this.scrollModalToBottom();
 
       // Wait for any validation or dynamic content
-      await sleep(500); // SPEED FIX: Reduced from 1500
+      await sleep(200); // SPEED BOOST: Reduced from 500
 
       // CRITICAL: Check for form validation errors
       const validationErrors = this.detectFormValidationErrors();
@@ -843,7 +938,7 @@ class LinkedInEasyApplyBot {
           }
 
           // Wait and check errors again
-          await sleep(500); // SPEED FIX: Reduced from 1500
+          await sleep(200); // SPEED BOOST: Reduced from 500
           const remainingErrors = this.detectFormValidationErrors();
 
           if (remainingErrors.length > 0 && remainingErrors.length >= validationErrors.length) {
@@ -864,7 +959,7 @@ class LinkedInEasyApplyBot {
       if (reviewButton && !reviewButton.disabled && !reviewButton.getAttribute('aria-disabled')) {
         log('Found REVIEW button, clicking...', 'info');
         this.addActivityLog('📋 Clicking Review button...', 'info');
-        await clickElement(reviewButton, 2000);
+        await clickElement(reviewButton, 800); // SPEED BOOST: Reduced from 2000
         currentStep++;
         continue;
       }
@@ -874,7 +969,7 @@ class LinkedInEasyApplyBot {
       if (nextButton && !nextButton.disabled && !nextButton.getAttribute('aria-disabled')) {
         log('Found NEXT button, moving to next step...', 'info');
         this.addActivityLog('➡️ Clicking Next button...', 'info');
-        await clickElement(nextButton, 2000);
+        await clickElement(nextButton, 800); // SPEED BOOST: Reduced from 2000
         currentStep++;
         continue;
       }
@@ -884,10 +979,10 @@ class LinkedInEasyApplyBot {
       if (submitButton && !submitButton.disabled) {
         log('Found SUBMIT button - Submitting application!', 'success');
         this.addActivityLog('📤 Submitting application...', 'success');
-        await clickElement(submitButton, 3000);
+        await clickElement(submitButton, 1500); // SPEED BOOST: Reduced from 3000
 
         // Wait to confirm submission
-        await sleep(3000);
+        await sleep(1500); // SPEED BOOST: Reduced from 3000
 
         // Check for success confirmation
         if (this.checkSubmissionSuccess()) {
@@ -1649,7 +1744,17 @@ class LinkedInEasyApplyBot {
     log(`Found ${allInputs.length} total form fields`, 'info');
 
     // CRITICAL: Also find custom LinkedIn dropdowns (div/button-based)
-    const customDropdowns = formContainer.querySelectorAll('[role="combobox"], button[aria-expanded], .artdeco-dropdown, [data-test-text-entity-list-form-select]');
+    const customDropdowns = formContainer.querySelectorAll(`
+      [role="combobox"],
+      button[aria-expanded],
+      .artdeco-dropdown,
+      [data-test-text-entity-list-form-select],
+      [data-test-text-entity-list-form-component],
+      .fb-dash-form-element__dropdown,
+      select[class*="dropdown"],
+      div[class*="select"]:not(input):not(textarea),
+      [aria-haspopup="listbox"]
+    `.trim().replace(/\s+/g, ' '));
     log(`Found ${customDropdowns.length} custom dropdowns`, 'info');
 
     for (const field of allInputs) {
@@ -1686,7 +1791,7 @@ class LinkedInEasyApplyBot {
           await this.fillField(field);
         }
 
-        await sleep(randomDelay(50, 150)); // SPEED FIX: Reduced from 100-300
+        await sleep(randomDelay(20, 50)); // SPEED BOOST: Reduced for faster filling
       } catch (error) {
         log(`Error filling field: ${error.message}`, 'warn');
       }
@@ -1696,7 +1801,7 @@ class LinkedInEasyApplyBot {
     for (const dropdown of customDropdowns) {
       try {
         await this.fillCustomDropdown(dropdown);
-        await sleep(randomDelay(100, 200));
+        await sleep(50); // SPEED BOOST: Reduced delay
       } catch (error) {
         log(`Error filling custom dropdown: ${error.message}`, 'warn');
       }
@@ -1842,7 +1947,7 @@ class LinkedInEasyApplyBot {
             select.dispatchEvent(new Event('blur', { bubbles: true }));
 
             log(`  ✅ Selected matched option: "${options[i].text}"`, 'success');
-            await sleep(150);
+            await sleep(80); // SPEED BOOST: Reduced from 150
             return;
           }
         }
@@ -1887,7 +1992,7 @@ class LinkedInEasyApplyBot {
       select.dispatchEvent(new Event('blur', { bubbles: true }));
 
       log(`  ✅ FORCE-selected first valid option: "${option.text}"`, 'success');
-      await sleep(150);
+      await sleep(80); // SPEED BOOST: Reduced from 150
       return;
     }
 
@@ -1907,7 +2012,7 @@ class LinkedInEasyApplyBot {
       select.dispatchEvent(new Event('blur', { bubbles: true }));
 
       log(`  ⚠️ ULTRA-FALLBACK: Force-selected option: "${fallbackOption.text}"`, 'warn');
-      await sleep(150);
+      await sleep(80); // SPEED BOOST: Reduced from 150
       return;
     } else if (options.length === 1) {
       // Only one option available, select it
@@ -1917,7 +2022,7 @@ class LinkedInEasyApplyBot {
       select.dispatchEvent(new Event('change', { bubbles: true }));
       select.dispatchEvent(new Event('blur', { bubbles: true }));
       log(`  ⚠️ ULTRA-FALLBACK: Selected only available option: "${options[0].text}"`, 'warn');
-      await sleep(150);
+      await sleep(80); // SPEED BOOST: Reduced from 150
       return;
     }
 
@@ -1963,7 +2068,7 @@ class LinkedInEasyApplyBot {
     // STEP 1: Click the dropdown to expand it
     log(`  Clicking dropdown to expand...`, 'info');
     dropdown.click();
-    await sleep(300); // Wait for dropdown to expand
+    await sleep(150); // SPEED BOOST: Reduced from 300
 
     // STEP 2: Find the options list
     // LinkedIn typically shows options in a listbox with role="listbox"
@@ -2036,7 +2141,7 @@ class LinkedInEasyApplyBot {
             targetLower.includes(optionLower)) {
           log(`  ✅ Found matching option: "${optionText}"`, 'success');
           option.click();
-          await sleep(200);
+          await sleep(100); // SPEED BOOST: Reduced from 200
           return;
         }
       }
@@ -2063,7 +2168,7 @@ class LinkedInEasyApplyBot {
       // Select this option!
       log(`  ✅ FALLBACK: Selecting first valid option: "${optionText}"`, 'success');
       option.click();
-      await sleep(200);
+      await sleep(100); // SPEED BOOST: Reduced from 200
       return;
     }
 
@@ -2073,14 +2178,14 @@ class LinkedInEasyApplyBot {
       const fallbackText = (fallbackOption.textContent || fallbackOption.innerText || '').trim();
       log(`  ⚠️ ULTRA-FALLBACK: Selecting any option: "${fallbackText}"`, 'warn');
       fallbackOption.click();
-      await sleep(200);
+      await sleep(100); // SPEED BOOST: Reduced from 200
       return;
     } else if (optionElements.length === 1) {
       const onlyOption = optionElements[0];
       const onlyText = (onlyOption.textContent || onlyOption.innerText || '').trim();
       log(`  ⚠️ ULTRA-FALLBACK: Selecting only option: "${onlyText}"`, 'warn');
       onlyOption.click();
-      await sleep(200);
+      await sleep(100); // SPEED BOOST: Reduced from 200
       return;
     }
 
