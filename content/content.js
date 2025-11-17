@@ -1982,7 +1982,7 @@ class LinkedInEasyApplyBot {
   }
 
   /**
-   * Fill a form field based on its label - ADVANCED VERSION
+   * Fill a form field based on its label - INPUT TYPE AWARE VERSION
    */
   async fillField(field) {
     const label = getFieldLabel(field);
@@ -2002,57 +2002,47 @@ class LinkedInEasyApplyBot {
       return;
     }
 
-    // Detect question type
+    const lowerLabel = (label || fieldName).toLowerCase();
     const questionType = detectQuestionType(label || fieldName);
 
     let value = '';
 
-    // PRIORITY 1: Use question type if detected
-    if (questionType) {
-      value = await Storage.getAnswerForQuestion(questionType, this.profile);
-      log(`  Detected question type: ${questionType}, value: "${value}"`, 'info');
+    // CRITICAL: Handle NUMBER inputs FIRST to avoid text in number fields
+    if (fieldType === 'number') {
+      value = this.getNumberValue(label || fieldName, questionType);
+
+      if (value) {
+        await fillInput(field, value);
+        log(`  ✅ Filled number field with: "${value}"`, 'success');
+      } else {
+        log(`  ⚠️  No numeric value determined for: ${label || fieldName}`, 'warn');
+      }
+      return;
     }
 
-    // PRIORITY 2: Field-specific mappings (only if value not already set)
-    const lowerLabel = (label || fieldName).toLowerCase();
+    // PRIORITY 1: Field-specific mappings (names, email, phone, etc.)
+    if (lowerLabel.includes('first name') || lowerLabel.includes('firstname') || lowerLabel.includes('given name')) {
+      value = this.profile.firstName;
+    } else if (lowerLabel.includes('last name') || lowerLabel.includes('lastname') || lowerLabel.includes('family name') || lowerLabel.includes('surname')) {
+      value = this.profile.lastName;
+    } else if (lowerLabel.includes('full name') || lowerLabel.includes('name') && !lowerLabel.includes('company')) {
+      value = `${this.profile.firstName} ${this.profile.lastName}`;
+    } else if (lowerLabel.includes('email')) {
+      value = this.profile.email;
+    } else if (lowerLabel.includes('phone') || lowerLabel.includes('mobile') || lowerLabel.includes('telephone')) {
+      value = this.profile.phone;
+    } else if (lowerLabel.includes('linkedin')) {
+      value = this.profile.linkedinUrl;
+    } else if (lowerLabel.includes('website') || lowerLabel.includes('portfolio') || lowerLabel.includes('url')) {
+      value = this.profile.websiteUrl;
+    } else if (lowerLabel.includes('city') || lowerLabel.includes('location') || lowerLabel.includes('address')) {
+      value = this.profile.jobLocation || '';
+    }
 
-    if (!value) {
-      if (lowerLabel.includes('first name') || lowerLabel.includes('firstname') || lowerLabel.includes('given name')) {
-        value = this.profile.firstName;
-      } else if (lowerLabel.includes('last name') || lowerLabel.includes('lastname') || lowerLabel.includes('family name') || lowerLabel.includes('surname')) {
-        value = this.profile.lastName;
-      } else if (lowerLabel.includes('full name') || lowerLabel.includes('name') && !lowerLabel.includes('company')) {
-        value = `${this.profile.firstName} ${this.profile.lastName}`;
-      } else if (lowerLabel.includes('email')) {
-        value = this.profile.email;
-      } else if (lowerLabel.includes('phone') || lowerLabel.includes('mobile') || lowerLabel.includes('telephone')) {
-        value = this.profile.phone;
-      } else if (lowerLabel.includes('linkedin')) {
-        value = this.profile.linkedinUrl;
-      } else if (lowerLabel.includes('website') || lowerLabel.includes('portfolio') || lowerLabel.includes('url')) {
-        value = this.profile.websiteUrl;
-      } else if (lowerLabel.includes('city') || lowerLabel.includes('location') || lowerLabel.includes('address')) {
-        value = this.profile.jobLocation || '';
-      } else if (fieldType === 'number') {
-        // Smart defaults for number fields based on context
-        if (lowerLabel.includes('year')) {
-          value = this.profile.yearsExperience || '2';
-        } else if (lowerLabel.includes('hourly') || lowerLabel.includes('hour') && (lowerLabel.includes('rate') || lowerLabel.includes('expect'))) {
-          value = '500'; // Default hourly rate in INR
-        } else if (lowerLabel.includes('ctc') || lowerLabel.includes('salary') || lowerLabel.includes('compensation')) {
-          if (lowerLabel.includes('current')) {
-            value = '600000'; // Current CTC in INR
-          } else if (lowerLabel.includes('expect')) {
-            value = '800000'; // Expected CTC in INR
-          } else {
-            value = this.profile.expectedSalary || '80000';
-          }
-        } else if (lowerLabel.includes('month')) {
-          value = '6'; // Default months
-        } else {
-          value = '1'; // Default for other number fields (changed from 0 to 1)
-        }
-      }
+    // PRIORITY 2: Use question type for text fields
+    if (!value && questionType) {
+      value = await Storage.getAnswerForQuestion(questionType, this.profile);
+      log(`  Detected question type: ${questionType}, value: "${value}"`, 'info');
     }
 
     if (value) {
@@ -2061,6 +2051,93 @@ class LinkedInEasyApplyBot {
     } else {
       log(`  ⚠️  No value found for field: ${label || fieldName}`, 'warn');
     }
+  }
+
+  /**
+   * Get numeric value for number input fields based on context
+   */
+  getNumberValue(label, questionType) {
+    const lowerLabel = label.toLowerCase();
+
+    // PRIORITY 1: Years of experience questions
+    if (lowerLabel.includes('year') && (lowerLabel.includes('experience') || lowerLabel.includes('work'))) {
+      // Check for specific technologies
+      if (lowerLabel.includes('python') || lowerLabel.includes('java') ||
+          lowerLabel.includes('javascript') || lowerLabel.includes('typescript') ||
+          lowerLabel.includes('node') || lowerLabel.includes('react') ||
+          lowerLabel.includes('saas') || lowerLabel.includes('web') ||
+          lowerLabel.includes('forge') || lowerLabel.includes('elastic')) {
+        return '2'; // Default 2 years for specific tech
+      }
+      return this.profile.yearsExperience || '3'; // General experience
+    }
+
+    // PRIORITY 2: Notice period (numeric)
+    if (lowerLabel.includes('notice')) {
+      if (lowerLabel.includes('day')) {
+        return '30'; // 30 days
+      } else if (lowerLabel.includes('week')) {
+        return '2'; // 2 weeks
+      } else if (lowerLabel.includes('month')) {
+        return '1'; // 1 month
+      }
+      // Default: assume days
+      return '15'; // 15 days
+    }
+
+    // PRIORITY 3: CTC/Salary (check for LPA vs absolute numbers)
+    if (lowerLabel.includes('ctc') || lowerLabel.includes('salary') || lowerLabel.includes('compensation')) {
+      const isLPA = lowerLabel.includes('lpa') || lowerLabel.includes('lakh') || lowerLabel.includes('lakhs');
+
+      if (lowerLabel.includes('current')) {
+        return isLPA ? '6' : '600000'; // 6 LPA or 6 lakhs
+      } else if (lowerLabel.includes('expect')) {
+        return isLPA ? '8' : '800000'; // 8 LPA or 8 lakhs
+      }
+
+      return isLPA ? '7' : '700000'; // Default
+    }
+
+    // PRIORITY 4: Hourly rate
+    if ((lowerLabel.includes('hourly') || lowerLabel.includes('hour')) &&
+        (lowerLabel.includes('rate') || lowerLabel.includes('expect') || lowerLabel.includes('inr'))) {
+      return '500'; // Default hourly in INR
+    }
+
+    // PRIORITY 5: Other year fields
+    if (lowerLabel.includes('year')) {
+      if (lowerLabel.includes('graduation') || lowerLabel.includes('graduate') || lowerLabel.includes('complete')) {
+        return '2020'; // Graduation year
+      }
+      return '2'; // Default years
+    }
+
+    // PRIORITY 6: Month fields
+    if (lowerLabel.includes('month')) {
+      return '6'; // Default months
+    }
+
+    // PRIORITY 7: Age
+    if (lowerLabel.includes('age')) {
+      return '25';
+    }
+
+    // PRIORITY 8: GPA/Grades
+    if (lowerLabel.includes('gpa') || lowerLabel.includes('grade') || lowerLabel.includes('percentage')) {
+      if (lowerLabel.includes('percentage')) {
+        return '75'; // 75%
+      }
+      return '3.5'; // GPA out of 4.0
+    }
+
+    // PRIORITY 9: Team size
+    if (lowerLabel.includes('team')) {
+      return '5';
+    }
+
+    // FALLBACK: Default safe number
+    log(`  ℹ️  Using default numeric value for unrecognized field`, 'info');
+    return '1';
   }
 
   /**
