@@ -250,3 +250,99 @@
   margin: 4px 0;
   line-height: 1.5;
 }
+
+/* Statistics Dashboard - PROFESSIONAL */
+.easy-apply-stats {
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 14px;
+  border: 1px solid #dee2e6;
+}
+
+.easy-apply-stats strong {
+  display: block;
+  margin-bottom: 10px;
+  color: #495057;
+  font-size: 13px;
+  text-align: center;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.stat-item {
+  background: white;
+  border-radius: 6px;
+  padding: 10px 8px;
+  text-align: center;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.stat-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.stat-value {
+  display: block;
+  font-size: 22px;
+  font-weight: 700;
+  color: #0073b1;
+  margin-bottom: 4px;
+  line-height: 1;
+}
+
+.stat-label {
+  display: block;
+  font-size: 10px;
+  color: #6c757d;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+
+/* Animated counters */
+@keyframes countUp {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.stat-value {
+  animation: countUp 0.4s ease-out;
+}
+
+/* Color variations for different stats */
+.stat-item:nth-child(1) .stat-value {
+  color: #28a745; /* Applied - Green */
+}
+
+.stat-item:nth-child(2) .stat-value {
+  color: #ffc107; /* Remaining - Yellow */
+}
+
+.stat-item:nth-child(3) .stat-value {
+  color: #0073b1; /* Success Rate - Blue */
+}
+
+/* Responsive adjustments */
+@media (max-width: 320px) {
+  .stats-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .stat-value {
+    font-size: 20px;
+  }
+}
