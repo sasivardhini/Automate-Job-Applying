@@ -84,18 +84,42 @@ class LinkedInEasyApplyBot {
   }
 
   /**
-   * Add floating control panel to page
+   * Humanized delay - mimics human behavior with randomization
    */
-  addControlPanel() {
+  async humanDelay(baseDelay = null) {
+    if (!this.settings.humanizedTiming) {
+      await sleep(baseDelay || this.settings.applyDelay);
+      return;
+    }
+
+    const minDelay = this.settings.minDelay || SAFETY_LIMITS.MIN_DELAY_BETWEEN_ACTIONS;
+    const maxDelay = this.settings.maxDelay || SAFETY_LIMITS.MAX_DELAY_BETWEEN_ACTIONS;
+
+    // Add randomization for more human-like behavior
+    const delay = baseDelay || randomDelay(minDelay, maxDelay);
+    const variance = delay * 0.2; // ±20% variance
+    const finalDelay = delay + (Math.random() * variance * 2 - variance);
+
+    await sleep(Math.max(minDelay, Math.floor(finalDelay)));
+  }
+
+  /**
+   * Add floating control panel to page - PROFESSIONAL DASHBOARD
+   */
+  async addControlPanel() {
     const panel = document.createElement('div');
     panel.id = 'easy-apply-control-panel';
 
     // Check if profile is complete
     const profileComplete = this.profile.jobTitle && this.profile.jobTitle.trim() !== '';
 
+    // Get analytics and rate limits
+    const analytics = await Storage.getAnalytics();
+    const rateLimits = await Storage.checkRateLimits();
+
     panel.innerHTML = `
       <div class="easy-apply-panel-header">
-        <span>🤖 Easy Apply Bot</span>
+        <span>🤖 Easy Apply Bot v2.0</span>
         <button id="easy-apply-toggle" class="easy-apply-btn">
           ${this.settings.autoApply ? 'Stop' : 'Start'}
         </button>
@@ -112,15 +136,36 @@ class LinkedInEasyApplyBot {
             </ol>
           </div>
         ` : ''}
+
+        <div class="easy-apply-stats" id="easy-apply-stats">
+          <strong>📊 Today's Statistics:</strong>
+          <div class="stats-grid">
+            <div class="stat-item">
+              <span class="stat-value" id="stat-applied">${rateLimits.daily.count}</span>
+              <span class="stat-label">Applied</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-value" id="stat-remaining">${rateLimits.daily.remaining}</span>
+              <span class="stat-label">Remaining</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-value" id="stat-success-rate">${analytics.successRate || 0}%</span>
+              <span class="stat-label">Success Rate</span>
+            </div>
+          </div>
+        </div>
+
         <div class="easy-apply-status">
           <strong>Status:</strong> <span id="easy-apply-status">Idle</span>
         </div>
+
         <div class="easy-apply-activity" id="easy-apply-activity">
           <strong>Activity:</strong>
           <div id="easy-apply-activity-log" class="activity-log">
             <div class="activity-item">Waiting to start...</div>
           </div>
         </div>
+
         <button id="search-and-apply-btn" class="easy-apply-search-btn">🔍 Search & Apply</button>
         <div class="easy-apply-hint">💡 Open Console (F12) for detailed logs</div>
       </div>
@@ -137,6 +182,29 @@ class LinkedInEasyApplyBot {
     document.getElementById('search-and-apply-btn').addEventListener('click', () => {
       this.searchAndApply();
     });
+
+    // Start statistics update interval
+    this.startStatsUpdater();
+  }
+
+  /**
+   * Update statistics in real-time
+   */
+  startStatsUpdater() {
+    // Update stats every 10 seconds
+    setInterval(async () => {
+      const analytics = await Storage.getAnalytics();
+      const rateLimits = await Storage.checkRateLimits();
+
+      // Update UI elements
+      const appliedEl = document.getElementById('stat-applied');
+      const remainingEl = document.getElementById('stat-remaining');
+      const successRateEl = document.getElementById('stat-success-rate');
+
+      if (appliedEl) appliedEl.textContent = rateLimits.daily.count;
+      if (remainingEl) remainingEl.textContent = rateLimits.daily.remaining;
+      if (successRateEl) successRateEl.textContent = `${analytics.successRate || 0}%`;
+    }, 10000); // Every 10 seconds
   }
 
   /**
@@ -451,12 +519,35 @@ class LinkedInEasyApplyBot {
   }
 
   /**
-   * Find and apply to the next available job - IMPROVED STRATEGY
+   * Find and apply to the next available job - PROFESSIONAL GRADE
    */
   async findAndApplyToNextJob() {
     log('🔍 Looking for jobs to apply to...', 'info');
     this.updateStatus('Searching for jobs...');
     this.addActivityLog('Searching for job cards...');
+
+    // CRITICAL: Check rate limits before proceeding
+    const rateLimits = await Storage.checkRateLimits();
+
+    if (rateLimits.hourly.exceeded) {
+      log(`⚠️  Hourly limit reached (${rateLimits.hourly.count}/${rateLimits.hourly.limit})`, 'warn');
+      this.addActivityLog(`⏸️  Hourly limit reached - pausing`, 'warn');
+      showNotification(`Hourly limit reached. Cool down for ${Math.ceil(SAFETY_LIMITS.COOL_DOWN_PERIOD / 60000)} minutes.`, 'warn');
+
+      // Wait for cool-down period
+      await sleep(SAFETY_LIMITS.COOL_DOWN_PERIOD);
+      return false;
+    }
+
+    if (rateLimits.daily.exceeded) {
+      log(`⚠️  Daily limit reached (${rateLimits.daily.count}/${rateLimits.daily.limit})`, 'warn');
+      this.addActivityLog(`🛑 Daily limit reached`, 'error');
+      showNotification('Daily application limit reached!', 'warn');
+      this.stopAutoApply();
+      return false;
+    }
+
+    log(`📊 Rate limits - Hourly: ${rateLimits.hourly.remaining} remaining | Daily: ${rateLimits.daily.remaining} remaining`, 'info');
 
     // STRATEGY: Find job cards first, then look for Easy Apply button
     const jobCards = this.findJobCards();
@@ -522,6 +613,20 @@ class LinkedInEasyApplyBot {
 
       log(`📄 Job: ${jobDetails.jobTitle} at ${jobDetails.companyName}`, 'info');
       this.addActivityLog(`Checking: ${jobDetails.jobTitle}`);
+
+      // PROFESSIONAL: Check if company is blacklisted
+      if (this.settings.skipBlacklistedCompanies) {
+        const isBlacklisted = await Storage.isBlacklisted(jobDetails.companyName);
+        if (isBlacklisted) {
+          log(`🚫 Company "${jobDetails.companyName}" is blacklisted, skipping...`, 'warn');
+          this.addActivityLog(`Blacklisted company, skipping`, 'warn');
+          await Storage.addApplication({
+            ...jobDetails,
+            status: APPLICATION_STATUS.BLOCKED
+          });
+          continue;
+        }
+      }
 
       // Check if already applied
       if (this.settings.skipApplied) {
@@ -780,7 +885,7 @@ class LinkedInEasyApplyBot {
   }
 
   /**
-   * Apply to a job
+   * Apply to a job - PROFESSIONAL GRADE WITH ANALYTICS
    */
   async applyToJob(button, jobDetails) {
     if (this.applicationInProgress) return false;
@@ -792,12 +897,16 @@ class LinkedInEasyApplyBot {
     log(`Starting application for: ${jobDetails.jobTitle} at ${jobDetails.companyName}`, 'info');
     this.addActivityLog(`Applying to ${jobDetails.jobTitle}...`);
 
+    const startTime = Date.now(); // Track application time
     let applicationSuccess = false;
 
     try {
       // Click Easy Apply button
       this.addActivityLog('Clicking Easy Apply button...');
       await clickElement(button, 1000);
+
+      // Humanized delay
+      await this.humanDelay(800);
 
       // Wait for modal to appear
       this.addActivityLog('Waiting for application form...');
@@ -812,13 +921,35 @@ class LinkedInEasyApplyBot {
       const success = await this.processApplicationForm();
 
       if (success) {
-        log('✅ Application submitted successfully!', 'success');
+        const timeSpent = Date.now() - startTime;
+
+        log(`✅ Application submitted successfully in ${(timeSpent / 1000).toFixed(1)}s!`, 'success');
         showNotification(`Applied to ${jobDetails.jobTitle}`, 'success');
         this.addActivityLog(`✅ Successfully applied!`, 'success');
 
+        // Track analytics
+        const analytics = await Storage.getAnalytics();
+        await Storage.updateAnalytics({
+          totalAttempts: analytics.totalAttempts + 1,
+          successfulApplications: analytics.successfulApplications + 1,
+          totalTimeSpent: analytics.totalTimeSpent + timeSpent,
+          averageTimePerJob: Math.round((analytics.totalTimeSpent + timeSpent) / (analytics.successfulApplications + 1)),
+          lastRunDate: Date.now()
+        });
+
         await Storage.addApplication({
           ...jobDetails,
-          status: APPLICATION_STATUS.APPLIED
+          status: APPLICATION_STATUS.APPLIED,
+          timeSpent
+        });
+
+        // Add to history
+        await Storage.addHistory({
+          action: 'application_success',
+          jobId: jobDetails.jobId,
+          jobTitle: jobDetails.jobTitle,
+          companyName: jobDetails.companyName,
+          timeSpent
         });
 
         applicationSuccess = true;
@@ -826,14 +957,48 @@ class LinkedInEasyApplyBot {
         throw new Error('Application process failed');
       }
     } catch (error) {
+      const timeSpent = Date.now() - startTime;
+
       log(`❌ Application failed: ${error.message}`, 'error');
       showNotification(`Failed: ${error.message}`, 'error');
       this.addActivityLog(`❌ Failed: ${error.message}`, 'error');
 
+      // Determine error type
+      let errorType = ERROR_TYPES.UNKNOWN;
+      if (error.message.includes('validation')) errorType = ERROR_TYPES.FORM_VALIDATION;
+      else if (error.message.includes('network')) errorType = ERROR_TYPES.NETWORK;
+      else if (error.message.includes('session')) errorType = ERROR_TYPES.SESSION_EXPIRED;
+      else if (error.message.includes('element') || error.message.includes('not found')) errorType = ERROR_TYPES.ELEMENT_NOT_FOUND;
+      else if (error.message.includes('timeout')) errorType = ERROR_TYPES.TIMEOUT;
+
+      // Track analytics
+      const analytics = await Storage.getAnalytics();
+      await Storage.updateAnalytics({
+        totalAttempts: analytics.totalAttempts + 1,
+        failedApplications: analytics.failedApplications + 1,
+        totalTimeSpent: analytics.totalTimeSpent + timeSpent,
+        lastRunDate: Date.now()
+      });
+
+      await Storage.trackError(errorType);
+
       await Storage.addApplication({
         ...jobDetails,
         status: APPLICATION_STATUS.FAILED,
-        error: error.message
+        error: error.message,
+        errorType,
+        timeSpent
+      });
+
+      // Add to history
+      await Storage.addHistory({
+        action: 'application_failed',
+        jobId: jobDetails.jobId,
+        jobTitle: jobDetails.jobTitle,
+        companyName: jobDetails.companyName,
+        error: error.message,
+        errorType,
+        timeSpent
       });
 
       applicationSuccess = false;
@@ -844,6 +1009,12 @@ class LinkedInEasyApplyBot {
 
       // Close modal if still open
       await this.closeModal();
+
+      // Humanized delay between applications
+      if (applicationSuccess && this.settings.pauseBetweenJobs) {
+        log(`Pausing for ${this.settings.pauseBetweenJobs / 1000}s before next job...`, 'info');
+        await this.humanDelay(this.settings.pauseBetweenJobs);
+      }
     }
 
     return applicationSuccess;
@@ -1893,7 +2064,7 @@ class LinkedInEasyApplyBot {
   }
 
   /**
-   * Fill select dropdown - ADVANCED VERSION
+   * Fill select dropdown - REACT-COMPATIBLE VERSION
    */
   async fillSelect(select) {
     const label = getFieldLabel(select);
@@ -1936,18 +2107,11 @@ class LinkedInEasyApplyBot {
               optionText.includes(valueToMatch) ||
               valueToMatch.includes(optionText) ||
               optionValue.includes(valueToMatch)) {
-            select.selectedIndex = i;
-            select.value = options[i].value;
 
-            // Trigger ALL events to ensure LinkedIn recognizes
-            select.focus();
-            select.dispatchEvent(new Event('focus', { bubbles: true }));
-            select.dispatchEvent(new Event('change', { bubbles: true }));
-            select.dispatchEvent(new Event('input', { bubbles: true }));
-            select.dispatchEvent(new Event('blur', { bubbles: true }));
-
+            // REACT-COMPATIBLE: Set value using native setter
+            await this.setSelectValueReactCompatible(select, options[i].value, i);
             log(`  ✅ Selected matched option: "${options[i].text}"`, 'success');
-            await sleep(80); // SPEED BOOST: Reduced from 150
+            await sleep(100);
             return;
           }
         }
@@ -1981,18 +2145,10 @@ class LinkedInEasyApplyBot {
       }
 
       // ALWAYS SELECT THE FIRST VALID OPTION - NEVER LEAVE EMPTY!
-      select.selectedIndex = i;
-      select.value = optionValue;
-
-      // Trigger ALL events to ensure LinkedIn recognizes the selection
-      select.focus();
-      select.dispatchEvent(new Event('focus', { bubbles: true }));
-      select.dispatchEvent(new Event('change', { bubbles: true }));
-      select.dispatchEvent(new Event('input', { bubbles: true }));
-      select.dispatchEvent(new Event('blur', { bubbles: true }));
-
+      // REACT-COMPATIBLE: Set value using native setter
+      await this.setSelectValueReactCompatible(select, optionValue, i);
       log(`  ✅ FORCE-selected first valid option: "${option.text}"`, 'success');
-      await sleep(80); // SPEED BOOST: Reduced from 150
+      await sleep(100);
       return;
     }
 
@@ -2001,32 +2157,72 @@ class LinkedInEasyApplyBot {
     if (options.length > 1) {
       // Select second option (skip first which is likely placeholder)
       const fallbackOption = options[1];
-      select.selectedIndex = 1;
-      select.value = fallbackOption.value;
-
-      // Trigger ALL events
-      select.focus();
-      select.dispatchEvent(new Event('focus', { bubbles: true }));
-      select.dispatchEvent(new Event('change', { bubbles: true }));
-      select.dispatchEvent(new Event('input', { bubbles: true }));
-      select.dispatchEvent(new Event('blur', { bubbles: true }));
-
+      await this.setSelectValueReactCompatible(select, fallbackOption.value, 1);
       log(`  ⚠️ ULTRA-FALLBACK: Force-selected option: "${fallbackOption.text}"`, 'warn');
-      await sleep(80); // SPEED BOOST: Reduced from 150
+      await sleep(100);
       return;
     } else if (options.length === 1) {
       // Only one option available, select it
-      select.selectedIndex = 0;
-      select.value = options[0].value;
-      select.focus();
-      select.dispatchEvent(new Event('change', { bubbles: true }));
-      select.dispatchEvent(new Event('blur', { bubbles: true }));
+      await this.setSelectValueReactCompatible(select, options[0].value, 0);
       log(`  ⚠️ ULTRA-FALLBACK: Selected only available option: "${options[0].text}"`, 'warn');
-      await sleep(80); // SPEED BOOST: Reduced from 150
+      await sleep(100);
       return;
     }
 
     log(`  ❌ ERROR: Dropdown has NO options at all!`, 'error');
+  }
+
+  /**
+   * Set select value in a React-compatible way
+   * This ensures LinkedIn's React forms recognize the change
+   */
+  async setSelectValueReactCompatible(select, value, index) {
+    try {
+      // CRITICAL: Use native setter for React compatibility
+      const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+        window.HTMLSelectElement.prototype,
+        'value'
+      ).set;
+
+      // Focus the select first
+      select.focus();
+      await sleep(50);
+
+      // Set selectedIndex first
+      select.selectedIndex = index;
+
+      // Set value using native setter (React recognizes this)
+      nativeInputValueSetter.call(select, value);
+
+      // Trigger input event first (React listens to this)
+      const inputEvent = new Event('input', { bubbles: true });
+      select.dispatchEvent(inputEvent);
+
+      // Small delay between events
+      await sleep(50);
+
+      // Then trigger change event
+      const changeEvent = new Event('change', { bubbles: true });
+      select.dispatchEvent(changeEvent);
+
+      // Blur to complete the interaction
+      await sleep(50);
+      select.blur();
+
+      log(`  🔧 React-compatible value set: "${value}" (index: ${index})`, 'info');
+    } catch (error) {
+      log(`  ⚠️ Error in React-compatible setter, using fallback: ${error.message}`, 'warn');
+
+      // Fallback to basic approach
+      select.selectedIndex = index;
+      select.value = value;
+      select.focus();
+      select.dispatchEvent(new Event('focus', { bubbles: true }));
+      select.dispatchEvent(new Event('input', { bubbles: true }));
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      select.dispatchEvent(new Event('blur', { bubbles: true }));
+      select.blur();
+    }
   }
 
   /**
@@ -2067,8 +2263,14 @@ class LinkedInEasyApplyBot {
 
     // STEP 1: Click the dropdown to expand it
     log(`  Clicking dropdown to expand...`, 'info');
+
+    // Scroll dropdown into view first
+    dropdown.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    await sleep(200);
+
+    // Click to open
     dropdown.click();
-    await sleep(150); // SPEED BOOST: Reduced from 300
+    await sleep(300); // Wait for dropdown to expand
 
     // STEP 2: Find the options list
     // LinkedIn typically shows options in a listbox with role="listbox"
@@ -2078,38 +2280,75 @@ class LinkedInEasyApplyBot {
       '.artdeco-dropdown__content-inner',
       '[data-test-dropdown-options]',
       'ul[role="menu"]',
-      '.select-list'
+      '.select-list',
+      '[aria-labelledby]'
     ];
 
     let optionsList = null;
-    for (const selector of optionsListSelectors) {
-      // Look for visible listbox in the document (may be in a portal/modal)
-      const lists = document.querySelectorAll(selector);
-      for (const list of lists) {
-        const style = window.getComputedStyle(list);
-        if (style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0') {
-          optionsList = list;
-          log(`  Found options list: ${selector}`, 'info');
-          break;
+    let attempts = 0;
+    const maxAttempts = 3;
+
+    // Try multiple times to find the options list (it may take time to appear)
+    while (!optionsList && attempts < maxAttempts) {
+      for (const selector of optionsListSelectors) {
+        // Look for visible listbox in the document (may be in a portal/modal)
+        const lists = document.querySelectorAll(selector);
+        for (const list of lists) {
+          const style = window.getComputedStyle(list);
+          if (style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0') {
+            optionsList = list;
+            log(`  Found options list: ${selector}`, 'info');
+            break;
+          }
         }
+        if (optionsList) break;
       }
-      if (optionsList) break;
+
+      if (!optionsList) {
+        attempts++;
+        log(`  Waiting for options list to appear (attempt ${attempts}/${maxAttempts})...`, 'info');
+        await sleep(200);
+      }
     }
 
     if (!optionsList) {
-      log(`  ❌ Could not find options list after expanding dropdown!`, 'error');
-      // Try to close the dropdown
-      dropdown.click();
+      log(`  ❌ Could not find options list after expanding dropdown and ${maxAttempts} attempts!`, 'error');
+      // Try to close the dropdown by clicking it again
+      try {
+        dropdown.click();
+      } catch (e) {
+        // Ignore close error
+      }
       return;
     }
 
     // STEP 3: Find all option elements
-    const optionElements = optionsList.querySelectorAll('[role="option"], li, .artdeco-dropdown__item, button');
-    log(`  Found ${optionElements.length} option elements`, 'info');
+    const optionSelectors = [
+      '[role="option"]',
+      'li',
+      '.artdeco-dropdown__item',
+      'button',
+      '[data-test-dropdown-item]',
+      '.select-list__item'
+    ];
+
+    let optionElements = [];
+    for (const selector of optionSelectors) {
+      const elements = optionsList.querySelectorAll(selector);
+      if (elements.length > 0) {
+        optionElements = Array.from(elements);
+        log(`  Found ${optionElements.length} option elements using: ${selector}`, 'info');
+        break;
+      }
+    }
 
     if (optionElements.length === 0) {
       log(`  ❌ No option elements found in list!`, 'error');
-      dropdown.click(); // Close dropdown
+      try {
+        dropdown.click(); // Close dropdown
+      } catch (e) {
+        // Ignore close error
+      }
       return;
     }
 
@@ -2140,8 +2379,16 @@ class LinkedInEasyApplyBot {
             optionLower.includes(targetLower) ||
             targetLower.includes(optionLower)) {
           log(`  ✅ Found matching option: "${optionText}"`, 'success');
+
+          // Scroll option into view
+          option.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          await sleep(100);
+
+          // Click the option
           option.click();
-          await sleep(100); // SPEED BOOST: Reduced from 200
+          await sleep(200);
+
+          log(`  ✅ Clicked matching option successfully`, 'success');
           return;
         }
       }
@@ -2167,8 +2414,16 @@ class LinkedInEasyApplyBot {
 
       // Select this option!
       log(`  ✅ FALLBACK: Selecting first valid option: "${optionText}"`, 'success');
+
+      // Scroll option into view
+      option.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      await sleep(100);
+
+      // Click the option
       option.click();
-      await sleep(100); // SPEED BOOST: Reduced from 200
+      await sleep(200);
+
+      log(`  ✅ Clicked fallback option successfully`, 'success');
       return;
     }
 
@@ -2177,15 +2432,21 @@ class LinkedInEasyApplyBot {
       const fallbackOption = optionElements[1]; // Skip first (likely placeholder)
       const fallbackText = (fallbackOption.textContent || fallbackOption.innerText || '').trim();
       log(`  ⚠️ ULTRA-FALLBACK: Selecting any option: "${fallbackText}"`, 'warn');
+
+      fallbackOption.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      await sleep(100);
       fallbackOption.click();
-      await sleep(100); // SPEED BOOST: Reduced from 200
+      await sleep(200);
       return;
     } else if (optionElements.length === 1) {
       const onlyOption = optionElements[0];
       const onlyText = (onlyOption.textContent || onlyOption.innerText || '').trim();
       log(`  ⚠️ ULTRA-FALLBACK: Selecting only option: "${onlyText}"`, 'warn');
+
+      onlyOption.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      await sleep(100);
       onlyOption.click();
-      await sleep(100); // SPEED BOOST: Reduced from 200
+      await sleep(200);
       return;
     }
 

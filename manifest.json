@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "LinkedIn Easy Apply Bot",
-  "version": "1.0.0",
-  "description": "Automate LinkedIn Easy Apply job applications with smart form filling and application tracking",
+  "version": "2.0.0",
+  "description": "Professional-grade LinkedIn automation with AI, analytics, rate limiting, and smart filtering. Apply to jobs 3x faster with enterprise-level safety features.",
   "permissions": [
     "storage",
     "activeTab",
