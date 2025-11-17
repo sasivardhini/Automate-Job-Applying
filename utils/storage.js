@@ -191,7 +191,7 @@ const Storage = {
       'EXPECTED_CTC': '800000', // Default expected CTC in INR (8 LPA)
       'START_DATE': 'Immediately',
       'NOTICE_PERIOD': profile.noticePeriod || '2 weeks',
-      'NOTICE_PERIOD_STATUS': 'Left the job', // Default: already left
+      'NOTICE_PERIOD_STATUS': 'Yes', // Default: Yes (serving notice period) - changed from 'Left the job' for better dropdown matching
 
       // Location & Relocation
       'LOCATION': profile.jobLocation || '',
