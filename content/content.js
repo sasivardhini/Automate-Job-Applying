@@ -241,7 +241,7 @@ class LinkedInEasyApplyBot {
 
     try {
       // CRITICAL: Check if session is expired first
-      if (this.detectSessionExpired()) {
+      if (await this.detectSessionExpired()) {
         return;
       }
 
@@ -337,10 +337,14 @@ class LinkedInEasyApplyBot {
   /**
    * Stop auto-apply - called when stop is needed
    */
-  stopAutoApply() {
+  async stopAutoApply() {
     this.settings.autoApply = false;
     this.isRunning = false;
     this.applicationInProgress = false;
+
+    // CRITICAL: Save settings to prevent auto-restart on page reload
+    await Storage.saveSettings(this.settings);
+
     this.updateStatus('Stopped');
     this.addActivityLog('🛑 Bot stopped', 'error');
 
@@ -348,6 +352,8 @@ class LinkedInEasyApplyBot {
     if (button) {
       button.textContent = 'Start';
     }
+
+    log('🛑 Bot stopped and setting saved to prevent auto-restart', 'warn');
   }
 
   /**
@@ -543,7 +549,7 @@ class LinkedInEasyApplyBot {
       log(`⚠️  Daily limit reached (${rateLimits.daily.count}/${rateLimits.daily.limit})`, 'warn');
       this.addActivityLog(`🛑 Daily limit reached`, 'error');
       showNotification('Daily application limit reached!', 'warn');
-      this.stopAutoApply();
+      await this.stopAutoApply();
       return false;
     }
 
@@ -1044,7 +1050,7 @@ class LinkedInEasyApplyBot {
       }
 
       // CRITICAL: Check if session expired
-      if (this.detectSessionExpired()) {
+      if (await this.detectSessionExpired()) {
         throw new Error('Session expired');
       }
 
@@ -2681,7 +2687,7 @@ class LinkedInEasyApplyBot {
   /**
    * Detect session expired or logged out - CRITICAL FIX
    */
-  detectSessionExpired() {
+  async detectSessionExpired() {
     const pageText = document.body.textContent.toLowerCase();
 
     // Check for session expired indicators
@@ -2695,7 +2701,7 @@ class LinkedInEasyApplyBot {
       this.addActivityLog('❌ Session expired - please log in', 'error');
 
       // Stop the bot
-      this.stopAutoApply();
+      await this.stopAutoApply();
       showNotification('Session expired - Please log in to LinkedIn', 'error');
 
       return true;
