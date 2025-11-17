@@ -107,15 +107,32 @@ class LinkedInEasyApplyBot {
    * Add floating control panel to page - PROFESSIONAL DASHBOARD
    */
   async addControlPanel() {
+    // Remove existing panel if present
+    const existingPanel = document.getElementById('easy-apply-control-panel');
+    if (existingPanel) {
+      existingPanel.remove();
+      log('Removed existing control panel', 'info');
+    }
+
     const panel = document.createElement('div');
     panel.id = 'easy-apply-control-panel';
 
     // Check if profile is complete
     const profileComplete = this.profile.jobTitle && this.profile.jobTitle.trim() !== '';
 
-    // Get analytics and rate limits
-    const analytics = await Storage.getAnalytics();
-    const rateLimits = await Storage.checkRateLimits();
+    // Get analytics and rate limits - with fallback to prevent panel from not showing
+    let analytics = { successRate: 0 };
+    let rateLimits = {
+      daily: { count: 0, remaining: 50 },
+      hourly: { count: 0, remaining: 10 }
+    };
+
+    try {
+      analytics = await Storage.getAnalytics();
+      rateLimits = await Storage.checkRateLimits();
+    } catch (error) {
+      log('Error loading analytics, using defaults: ' + error.message, 'warn');
+    }
 
     panel.innerHTML = `
       <div class="easy-apply-panel-header">
@@ -172,6 +189,7 @@ class LinkedInEasyApplyBot {
     `;
 
     document.body.appendChild(panel);
+    log('✅ Control panel added to page with Search & Apply button', 'success');
 
     // Add toggle button listener
     document.getElementById('easy-apply-toggle').addEventListener('click', () => {
@@ -185,6 +203,8 @@ class LinkedInEasyApplyBot {
 
     // Start statistics update interval
     this.startStatsUpdater();
+
+    log('✅ All control panel event listeners attached', 'success');
   }
 
   /**
