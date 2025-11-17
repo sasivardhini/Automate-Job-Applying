@@ -244,6 +244,233 @@ const Storage = {
         return appDate === today;
       }).length
     };
+  },
+
+  /**
+   * Get analytics data
+   */
+  async getAnalytics() {
+    const analytics = await this.get(STORAGE_KEYS.ANALYTICS);
+    return analytics || {
+      totalAttempts: 0,
+      successfulApplications: 0,
+      failedApplications: 0,
+      skippedJobs: 0,
+      averageTimePerJob: 0,
+      totalTimeSpent: 0,
+      formComplexityScores: [],
+      errorTypes: {},
+      successRate: 0,
+      lastRunDate: null,
+      sessionsCompleted: 0
+    };
+  },
+
+  /**
+   * Update analytics
+   */
+  async updateAnalytics(updates) {
+    const analytics = await this.getAnalytics();
+    const updated = { ...analytics, ...updates };
+
+    // Calculate success rate
+    const totalCompleted = updated.successfulApplications + updated.failedApplications;
+    updated.successRate = totalCompleted > 0
+      ? (updated.successfulApplications / totalCompleted * 100).toFixed(2)
+      : 0;
+
+    return await this.set(STORAGE_KEYS.ANALYTICS, updated);
+  },
+
+  /**
+   * Track error
+   */
+  async trackError(errorType) {
+    const analytics = await this.getAnalytics();
+    const errorTypes = analytics.errorTypes || {};
+    errorTypes[errorType] = (errorTypes[errorType] || 0) + 1;
+
+    return await this.updateAnalytics({ errorTypes });
+  },
+
+  /**
+   * Get filters
+   */
+  async getFilters() {
+    const filters = await this.get(STORAGE_KEYS.FILTERS);
+    return filters || {
+      keywords: [],
+      excludeKeywords: [],
+      minSalary: null,
+      maxSalary: null,
+      locations: [],
+      jobTypes: [], // remote, hybrid, onsite
+      experienceLevels: [], // entry, mid, senior
+      companySize: [], // startup, small, medium, large
+      industries: []
+    };
+  },
+
+  /**
+   * Save filters
+   */
+  async saveFilters(filters) {
+    return await this.set(STORAGE_KEYS.FILTERS, filters);
+  },
+
+  /**
+   * Get company blacklist
+   */
+  async getBlacklist() {
+    const blacklist = await this.get(STORAGE_KEYS.BLACKLIST);
+    return blacklist || [];
+  },
+
+  /**
+   * Add company to blacklist
+   */
+  async addToBlacklist(companyName, reason = '') {
+    const blacklist = await this.getBlacklist();
+    if (!blacklist.find(item => item.company.toLowerCase() === companyName.toLowerCase())) {
+      blacklist.push({
+        company: companyName,
+        reason,
+        addedAt: Date.now()
+      });
+      return await this.set(STORAGE_KEYS.BLACKLIST, blacklist);
+    }
+    return false;
+  },
+
+  /**
+   * Remove company from blacklist
+   */
+  async removeFromBlacklist(companyName) {
+    const blacklist = await this.getBlacklist();
+    const filtered = blacklist.filter(
+      item => item.company.toLowerCase() !== companyName.toLowerCase()
+    );
+    return await this.set(STORAGE_KEYS.BLACKLIST, filtered);
+  },
+
+  /**
+   * Check if company is blacklisted
+   */
+  async isBlacklisted(companyName) {
+    const blacklist = await this.getBlacklist();
+    return blacklist.some(
+      item => item.company.toLowerCase() === companyName.toLowerCase()
+    );
+  },
+
+  /**
+   * Get application history (detailed logs)
+   */
+  async getHistory() {
+    const history = await this.get(STORAGE_KEYS.HISTORY);
+    return history || [];
+  },
+
+  /**
+   * Add history entry
+   */
+  async addHistory(entry) {
+    const history = await this.getHistory();
+    history.unshift({
+      ...entry,
+      timestamp: Date.now()
+    });
+
+    // Keep only last 1000 entries
+    if (history.length > 1000) {
+      history.splice(1000);
+    }
+
+    return await this.set(STORAGE_KEYS.HISTORY, history);
+  },
+
+  /**
+   * Export data for backup/analysis
+   */
+  async exportData() {
+    const [profile, applications, settings, analytics, filters, blacklist] = await Promise.all([
+      this.getProfile(),
+      this.getApplications(),
+      this.getSettings(),
+      this.getAnalytics(),
+      this.getFilters(),
+      this.getBlacklist()
+    ]);
+
+    return {
+      profile,
+      applications,
+      settings,
+      analytics,
+      filters,
+      blacklist,
+      exportedAt: Date.now(),
+      version: '2.0'
+    };
+  },
+
+  /**
+   * Import data from backup
+   */
+  async importData(data) {
+    try {
+      if (data.profile) await this.saveProfile(data.profile);
+      if (data.settings) await this.saveSettings(data.settings);
+      if (data.analytics) await this.set(STORAGE_KEYS.ANALYTICS, data.analytics);
+      if (data.filters) await this.saveFilters(data.filters);
+      if (data.blacklist) await this.set(STORAGE_KEYS.BLACKLIST, data.blacklist);
+      if (data.applications) await this.set(STORAGE_KEYS.APPLICATIONS, data.applications);
+
+      return true;
+    } catch (error) {
+      console.error('Import error:', error);
+      return false;
+    }
+  },
+
+  /**
+   * Check rate limits (hourly and daily)
+   */
+  async checkRateLimits() {
+    const applications = await this.getApplications();
+    const now = Date.now();
+
+    // Check hourly limit
+    const lastHour = now - (60 * 60 * 1000);
+    const applicationsLastHour = applications.filter(app =>
+      app.appliedAt > lastHour && app.status === APPLICATION_STATUS.APPLIED
+    ).length;
+
+    // Check daily limit
+    const today = new Date().setHours(0, 0, 0, 0);
+    const applicationsToday = applications.filter(app => {
+      const appDate = new Date(app.appliedAt).setHours(0, 0, 0, 0);
+      return appDate === today && app.status === APPLICATION_STATUS.APPLIED;
+    }).length;
+
+    const settings = await this.getSettings();
+    const hourlyLimit = settings.maxApplicationsPerHour || SAFETY_LIMITS.MAX_APPLICATIONS_PER_HOUR;
+    const dailyLimit = settings.maxApplicationsPerDay || SAFETY_LIMITS.MAX_APPLICATIONS_PER_DAY;
+
+    return {
+      hourly: {
+        count: applicationsLastHour,
+        limit: hourlyLimit,
+        remaining: Math.max(0, hourlyLimit - applicationsLastHour),
+        exceeded: applicationsLastHour >= hourlyLimit
+      },
+      daily: {
+        count: applicationsToday,
+        limit: dailyLimit,
+        remaining: Math.max(0, dailyLimit - applicationsToday),
+        exceeded: applicationsToday >= dailyLimit
+      }
+    };
   }
 };
 
