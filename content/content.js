@@ -1054,7 +1054,7 @@ class LinkedInEasyApplyBot {
     const maxSteps = 15;
     let lastFormState = '';
     let stuckCounter = 0; // Track how many times we're stuck
-    const maxStuckAttempts = 3; // Skip job after 3 stuck attempts
+    const maxStuckAttempts = 7; // INCREASED: Skip job after 7 stuck attempts (was 3)
 
     log('Starting advanced form processing...', 'info');
 
@@ -1087,22 +1087,36 @@ class LinkedInEasyApplyBot {
 
         // If stuck too many times, skip this job
         if (stuckCounter >= maxStuckAttempts) {
-          log('❌ STUCK TOO LONG - Skipping this job!', 'error');
-          this.addActivityLog('⚠️ Skipped: Application stuck', 'error');
-          await this.closeModal();
+          log('❌ STUCK TOO LONG - Giving up on this job!', 'error');
+          this.addActivityLog('⚠️ Skipped: Application stuck after multiple retries', 'error');
+          // DON'T call closeModal here - let the finally block handle it to avoid "Save application?" dialog
           return false;
+        }
+
+        // AGGRESSIVE RETRY: Try to fill all required fields again
+        if (stuckCounter >= 3) {
+          log('⚠️ Attempting aggressive fill of all required fields...', 'warn');
+          const requiredFields = this.findUnfilledRequiredFields();
+          if (requiredFields.length > 0) {
+            log(`  Found ${requiredFields.length} unfilled required fields, filling aggressively...`, 'info');
+            for (const field of requiredFields) {
+              await this.fillFieldIntelligent(field);
+              await sleep(300); // Wait longer between fields
+            }
+            await sleep(500); // Wait for validation
+          }
         }
 
         // Try clicking any enabled primary button (but not preferences/save)
         const anyButton = this.findSafeActionButton();
         if (anyButton) {
           log('Found safe action button, clicking...', 'info');
-          await clickElement(anyButton, 800); // SPEED BOOST: Reduced from 2000
+          await clickElement(anyButton, 800);
           currentStep++;
           continue;
         } else {
-          log('No action buttons found, form may be complete or stuck', 'warn');
-          break;
+          log('No action buttons found, waiting...', 'warn');
+          // Don't break immediately - let it retry
         }
       } else {
         // Reset stuck counter if form state changed
@@ -1272,9 +1286,62 @@ class LinkedInEasyApplyBot {
 
       // CRITICAL: Only handle if we're NOT actively filling an application
       // If application is in progress and user hasn't clicked stop, KEEP the dialog open!
-      if (this.applicationInProgress && this.settings.autoApply) {
-        log('ℹ️  "Save application" dialog detected, but application IN PROGRESS - IGNORING for now', 'info');
-        return false; // Don't handle it yet!
+      if (this.applicationInProgress && this.settings.autoApply && this.isRunning) {
+        log('ℹ️  "Save application" dialog detected, but application IN PROGRESS - CLICKING CANCEL to continue!', 'info');
+        // Try to click CANCEL/SAVE to continue the application instead of discarding
+        const modalSelectors = [
+          '.artdeco-modal',
+          '[role="dialog"]',
+          '[data-test-modal]'
+        ];
+
+        for (const selector of modalSelectors) {
+          const modals = document.querySelectorAll(selector);
+
+          for (const modal of modals) {
+            const modalText = modal.textContent || '';
+
+            if (modalText.includes('Save this application')) {
+              const allButtons = modal.querySelectorAll('button');
+
+              // Try to click SAVE to keep progress and continue
+              for (const button of allButtons) {
+                const btnText = (button.textContent || '').toLowerCase().trim();
+
+                if (btnText.includes('save') && !btnText.includes('discard')) {
+                  log(`✅ Clicking SAVE to preserve application progress`, 'success');
+                  button.click();
+                  await sleep(1000);
+                  return true;
+                }
+              }
+
+              // If no Save button, try Cancel
+              for (const button of allButtons) {
+                const btnText = (button.textContent || '').toLowerCase().trim();
+
+                if (btnText.includes('cancel')) {
+                  log(`✅ Clicking CANCEL to continue filling application`, 'success');
+                  button.click();
+                  await sleep(1000);
+                  return true;
+                }
+              }
+            }
+          }
+        }
+
+        // If we can't find Save or Cancel, press ESC
+        log('Pressing ESC to cancel save dialog and continue...', 'warn');
+        document.dispatchEvent(new KeyboardEvent('keydown', {
+          key: 'Escape',
+          keyCode: 27,
+          which: 27,
+          bubbles: true,
+          cancelable: true
+        }));
+        await sleep(1000);
+        return true;
       }
 
       log('🚨 DETECTED "Save application" dialog - DISCARDING (application stopped or complete)...', 'warn');
@@ -1841,11 +1908,46 @@ class LinkedInEasyApplyBot {
    */
   findUnfilledRequiredFields() {
     const fields = [];
+
+    // Find standard required fields
     const requiredInputs = document.querySelectorAll('input[required], select[required], textarea[required], [aria-required="true"]');
 
     for (const input of requiredInputs) {
+      // Check if field is empty
       if (!input.value || input.value.trim() === '') {
         fields.push(input);
+        continue;
+      }
+
+      // For select dropdowns, also check if a valid option is selected (not placeholder)
+      if (input.tagName.toLowerCase() === 'select') {
+        const selectedText = input.options[input.selectedIndex]?.text || '';
+        if (selectedText.toLowerCase().includes('select') ||
+            selectedText === '--' ||
+            selectedText === '' ||
+            input.selectedIndex === 0) {
+          fields.push(input);
+        }
+      }
+    }
+
+    // ALSO find custom dropdowns that are required but not filled
+    const customDropdowns = document.querySelectorAll(`
+      [role="combobox"][aria-required="true"],
+      button[aria-expanded][aria-required="true"],
+      [data-test-text-entity-list-form-select][aria-required="true"]
+    `.trim().replace(/\s+/g, ' '));
+
+    for (const dropdown of customDropdowns) {
+      const selectedText = (dropdown.textContent || '').trim().toLowerCase();
+
+      // Check if dropdown is still showing placeholder text
+      if (selectedText.includes('select an option') ||
+          selectedText.includes('select') ||
+          selectedText.includes('choose') ||
+          selectedText === '--' ||
+          selectedText === '') {
+        fields.push(dropdown);
       }
     }
 
@@ -1858,7 +1960,17 @@ class LinkedInEasyApplyBot {
   async fillFieldIntelligent(field) {
     const label = getFieldLabel(field) || field.name || '';
     const fieldType = field.tagName.toLowerCase();
-    log(`🔧 Intelligently filling required field: ${label} (${fieldType})`, 'info');
+    const role = field.getAttribute('role');
+    log(`🔧 Intelligently filling required field: ${label} (${fieldType}, role=${role})`, 'info');
+
+    // CRITICAL: Handle custom dropdowns (role=combobox, button with aria-expanded)
+    if (role === 'combobox' ||
+        (fieldType === 'button' && field.hasAttribute('aria-expanded')) ||
+        field.hasAttribute('data-test-text-entity-list-form-select')) {
+      log(`  Detected custom dropdown, using fillCustomDropdown...`, 'info');
+      await this.fillCustomDropdown(field);
+      return;
+    }
 
     // Try normal fill first
     if (fieldType === 'textarea') {
@@ -2067,7 +2179,10 @@ class LinkedInEasyApplyBot {
         await fillInput(field, value);
         log(`  ✅ Filled number field with: "${value}"`, 'success');
       } else {
-        log(`  ⚠️  No numeric value determined for: ${label || fieldName}`, 'warn');
+        // FALLBACK: If we can't determine a value, use a safe default
+        const defaultValue = '1';
+        await fillInput(field, defaultValue);
+        log(`  ⚠️  No specific value determined for: ${label || fieldName}, using default: "${defaultValue}"`, 'warn');
       }
       return;
     }
@@ -2134,16 +2249,14 @@ class LinkedInEasyApplyBot {
 
     // PRIORITY 1: Years of experience questions
     if (lowerLabel.includes('year') && (lowerLabel.includes('experience') || lowerLabel.includes('work'))) {
-      // Check for specific technologies
-      if (lowerLabel.includes('python') || lowerLabel.includes('java') ||
-          lowerLabel.includes('javascript') || lowerLabel.includes('typescript') ||
-          lowerLabel.includes('node') || lowerLabel.includes('react') ||
-          lowerLabel.includes('saas') || lowerLabel.includes('web') ||
-          lowerLabel.includes('forge') || lowerLabel.includes('elastic')) {
-        return needsDecimal ? '2.0' : '2'; // Default 2 years for specific tech
+      // Check if asking about specific technology/skill (has "with" in question)
+      if (lowerLabel.includes(' with ') || lowerLabel.includes('experience with')) {
+        // Asking about specific technology (Python, AMLS, Data Science, etc.)
+        return needsDecimal ? '2.0' : '2'; // Default 2 years for any specific tech/skill
       }
+      // General total work experience
       const expValue = this.profile.yearsExperience || '3';
-      return needsDecimal ? `${expValue}.0` : expValue; // General experience
+      return needsDecimal ? `${expValue}.0` : expValue;
     }
 
     // PRIORITY 2: Notice period (numeric) - SMART DECIMAL DETECTION
