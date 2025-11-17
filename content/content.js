@@ -241,7 +241,7 @@ class LinkedInEasyApplyBot {
 
     try {
       // CRITICAL: Check if session is expired first
-      if (this.detectSessionExpired()) {
+      if (await this.detectSessionExpired()) {
         return;
       }
 
@@ -337,10 +337,14 @@ class LinkedInEasyApplyBot {
   /**
    * Stop auto-apply - called when stop is needed
    */
-  stopAutoApply() {
+  async stopAutoApply() {
     this.settings.autoApply = false;
     this.isRunning = false;
     this.applicationInProgress = false;
+
+    // CRITICAL: Save settings to prevent auto-restart on page reload
+    await Storage.saveSettings(this.settings);
+
     this.updateStatus('Stopped');
     this.addActivityLog('🛑 Bot stopped', 'error');
 
@@ -348,6 +352,8 @@ class LinkedInEasyApplyBot {
     if (button) {
       button.textContent = 'Start';
     }
+
+    log('🛑 Bot stopped and setting saved to prevent auto-restart', 'warn');
   }
 
   /**
@@ -543,7 +549,7 @@ class LinkedInEasyApplyBot {
       log(`⚠️  Daily limit reached (${rateLimits.daily.count}/${rateLimits.daily.limit})`, 'warn');
       this.addActivityLog(`🛑 Daily limit reached`, 'error');
       showNotification('Daily application limit reached!', 'warn');
-      this.stopAutoApply();
+      await this.stopAutoApply();
       return false;
     }
 
@@ -1044,7 +1050,7 @@ class LinkedInEasyApplyBot {
       }
 
       // CRITICAL: Check if session expired
-      if (this.detectSessionExpired()) {
+      if (await this.detectSessionExpired()) {
         throw new Error('Session expired');
       }
 
@@ -2009,7 +2015,7 @@ class LinkedInEasyApplyBot {
 
     // CRITICAL: Handle NUMBER inputs FIRST to avoid text in number fields
     if (fieldType === 'number') {
-      value = this.getNumberValue(label || fieldName, questionType);
+      value = this.getNumberValue(label || fieldName, questionType, field);
 
       if (value) {
         await fillInput(field, value);
@@ -2056,8 +2062,29 @@ class LinkedInEasyApplyBot {
   /**
    * Get numeric value for number input fields based on context
    */
-  getNumberValue(label, questionType) {
+  getNumberValue(label, questionType, fieldElement = null) {
     const lowerLabel = label.toLowerCase();
+
+    // Check if field requires decimal format
+    let needsDecimal = false;
+    if (fieldElement) {
+      const placeholder = (fieldElement.placeholder || '').toLowerCase();
+      const step = fieldElement.step;
+      const min = fieldElement.min;
+
+      // Detect decimal requirement from various sources
+      needsDecimal =
+        lowerLabel.includes('decimal') ||
+        lowerLabel.includes('0.0') ||
+        placeholder.includes('decimal') ||
+        placeholder.includes('0.0') ||
+        step === '0.1' ||
+        step === '0.01' ||
+        step === 'any' ||
+        (min && min.includes('.'));
+
+      log(`  🔍 Decimal detection: label="${lowerLabel.includes('decimal')}", placeholder="${placeholder.includes('decimal')}", step="${step}", needsDecimal=${needsDecimal}`, 'info');
+    }
 
     // PRIORITY 1: Years of experience questions
     if (lowerLabel.includes('year') && (lowerLabel.includes('experience') || lowerLabel.includes('work'))) {
@@ -2067,22 +2094,23 @@ class LinkedInEasyApplyBot {
           lowerLabel.includes('node') || lowerLabel.includes('react') ||
           lowerLabel.includes('saas') || lowerLabel.includes('web') ||
           lowerLabel.includes('forge') || lowerLabel.includes('elastic')) {
-        return '2'; // Default 2 years for specific tech
+        return needsDecimal ? '2.0' : '2'; // Default 2 years for specific tech
       }
-      return this.profile.yearsExperience || '3'; // General experience
+      const expValue = this.profile.yearsExperience || '3';
+      return needsDecimal ? `${expValue}.0` : expValue; // General experience
     }
 
-    // PRIORITY 2: Notice period (numeric)
+    // PRIORITY 2: Notice period (numeric) - SMART DECIMAL DETECTION
     if (lowerLabel.includes('notice')) {
       if (lowerLabel.includes('day')) {
-        return '30'; // 30 days
+        return needsDecimal ? '30.0' : '30'; // 30 days
       } else if (lowerLabel.includes('week')) {
-        return '2'; // 2 weeks
+        return needsDecimal ? '2.0' : '2'; // 2 weeks
       } else if (lowerLabel.includes('month')) {
-        return '1'; // 1 month
+        return needsDecimal ? '1.0' : '1'; // 1 month
       }
-      // Default: assume days
-      return '15'; // 15 days
+      // Default: assume days (most common format)
+      return needsDecimal ? '15.0' : '15'; // 15 days
     }
 
     // PRIORITY 3: CTC/Salary (check for LPA vs absolute numbers)
@@ -2090,54 +2118,57 @@ class LinkedInEasyApplyBot {
       const isLPA = lowerLabel.includes('lpa') || lowerLabel.includes('lakh') || lowerLabel.includes('lakhs');
 
       if (lowerLabel.includes('current')) {
-        return isLPA ? '6' : '600000'; // 6 LPA or 6 lakhs
+        const val = isLPA ? '6' : '600000'; // 6 LPA or 6 lakhs
+        return needsDecimal && !val.includes('.') ? `${val}.0` : val;
       } else if (lowerLabel.includes('expect')) {
-        return isLPA ? '8' : '800000'; // 8 LPA or 8 lakhs
+        const val = isLPA ? '8' : '800000'; // 8 LPA or 8 lakhs
+        return needsDecimal && !val.includes('.') ? `${val}.0` : val;
       }
 
-      return isLPA ? '7' : '700000'; // Default
+      const val = isLPA ? '7' : '700000'; // Default
+      return needsDecimal && !val.includes('.') ? `${val}.0` : val;
     }
 
     // PRIORITY 4: Hourly rate
     if ((lowerLabel.includes('hourly') || lowerLabel.includes('hour')) &&
         (lowerLabel.includes('rate') || lowerLabel.includes('expect') || lowerLabel.includes('inr'))) {
-      return '500'; // Default hourly in INR
+      return needsDecimal ? '500.0' : '500'; // Default hourly in INR
     }
 
     // PRIORITY 5: Other year fields
     if (lowerLabel.includes('year')) {
       if (lowerLabel.includes('graduation') || lowerLabel.includes('graduate') || lowerLabel.includes('complete')) {
-        return '2020'; // Graduation year
+        return '2020'; // Graduation year (never decimal)
       }
-      return '2'; // Default years
+      return needsDecimal ? '2.0' : '2'; // Default years
     }
 
     // PRIORITY 6: Month fields
     if (lowerLabel.includes('month')) {
-      return '6'; // Default months
+      return needsDecimal ? '6.0' : '6'; // Default months
     }
 
     // PRIORITY 7: Age
     if (lowerLabel.includes('age')) {
-      return '25';
+      return needsDecimal ? '25.0' : '25';
     }
 
     // PRIORITY 8: GPA/Grades
     if (lowerLabel.includes('gpa') || lowerLabel.includes('grade') || lowerLabel.includes('percentage')) {
       if (lowerLabel.includes('percentage')) {
-        return '75'; // 75%
+        return needsDecimal ? '75.0' : '75'; // 75%
       }
-      return '3.5'; // GPA out of 4.0
+      return '3.5'; // GPA already has decimal
     }
 
     // PRIORITY 9: Team size
     if (lowerLabel.includes('team')) {
-      return '5';
+      return needsDecimal ? '5.0' : '5';
     }
 
-    // FALLBACK: Default safe number
+    // FALLBACK: Default safe number with decimal support
     log(`  ℹ️  Using default numeric value for unrecognized field`, 'info');
-    return '1';
+    return needsDecimal ? '1.0' : '1';
   }
 
   /**
@@ -2681,7 +2712,7 @@ class LinkedInEasyApplyBot {
   /**
    * Detect session expired or logged out - CRITICAL FIX
    */
-  detectSessionExpired() {
+  async detectSessionExpired() {
     const pageText = document.body.textContent.toLowerCase();
 
     // Check for session expired indicators
@@ -2695,7 +2726,7 @@ class LinkedInEasyApplyBot {
       this.addActivityLog('❌ Session expired - please log in', 'error');
 
       // Stop the bot
-      this.stopAutoApply();
+      await this.stopAutoApply();
       showNotification('Session expired - Please log in to LinkedIn', 'error');
 
       return true;
