@@ -1893,7 +1893,7 @@ class LinkedInEasyApplyBot {
   }
 
   /**
-   * Fill select dropdown - ADVANCED VERSION
+   * Fill select dropdown - REACT-COMPATIBLE VERSION
    */
   async fillSelect(select) {
     const label = getFieldLabel(select);
@@ -1936,18 +1936,11 @@ class LinkedInEasyApplyBot {
               optionText.includes(valueToMatch) ||
               valueToMatch.includes(optionText) ||
               optionValue.includes(valueToMatch)) {
-            select.selectedIndex = i;
-            select.value = options[i].value;
 
-            // Trigger ALL events to ensure LinkedIn recognizes
-            select.focus();
-            select.dispatchEvent(new Event('focus', { bubbles: true }));
-            select.dispatchEvent(new Event('change', { bubbles: true }));
-            select.dispatchEvent(new Event('input', { bubbles: true }));
-            select.dispatchEvent(new Event('blur', { bubbles: true }));
-
+            // REACT-COMPATIBLE: Set value using native setter
+            await this.setSelectValueReactCompatible(select, options[i].value, i);
             log(`  ✅ Selected matched option: "${options[i].text}"`, 'success');
-            await sleep(80); // SPEED BOOST: Reduced from 150
+            await sleep(100);
             return;
           }
         }
@@ -1981,18 +1974,10 @@ class LinkedInEasyApplyBot {
       }
 
       // ALWAYS SELECT THE FIRST VALID OPTION - NEVER LEAVE EMPTY!
-      select.selectedIndex = i;
-      select.value = optionValue;
-
-      // Trigger ALL events to ensure LinkedIn recognizes the selection
-      select.focus();
-      select.dispatchEvent(new Event('focus', { bubbles: true }));
-      select.dispatchEvent(new Event('change', { bubbles: true }));
-      select.dispatchEvent(new Event('input', { bubbles: true }));
-      select.dispatchEvent(new Event('blur', { bubbles: true }));
-
+      // REACT-COMPATIBLE: Set value using native setter
+      await this.setSelectValueReactCompatible(select, optionValue, i);
       log(`  ✅ FORCE-selected first valid option: "${option.text}"`, 'success');
-      await sleep(80); // SPEED BOOST: Reduced from 150
+      await sleep(100);
       return;
     }
 
@@ -2001,32 +1986,72 @@ class LinkedInEasyApplyBot {
     if (options.length > 1) {
       // Select second option (skip first which is likely placeholder)
       const fallbackOption = options[1];
-      select.selectedIndex = 1;
-      select.value = fallbackOption.value;
-
-      // Trigger ALL events
-      select.focus();
-      select.dispatchEvent(new Event('focus', { bubbles: true }));
-      select.dispatchEvent(new Event('change', { bubbles: true }));
-      select.dispatchEvent(new Event('input', { bubbles: true }));
-      select.dispatchEvent(new Event('blur', { bubbles: true }));
-
+      await this.setSelectValueReactCompatible(select, fallbackOption.value, 1);
       log(`  ⚠️ ULTRA-FALLBACK: Force-selected option: "${fallbackOption.text}"`, 'warn');
-      await sleep(80); // SPEED BOOST: Reduced from 150
+      await sleep(100);
       return;
     } else if (options.length === 1) {
       // Only one option available, select it
-      select.selectedIndex = 0;
-      select.value = options[0].value;
-      select.focus();
-      select.dispatchEvent(new Event('change', { bubbles: true }));
-      select.dispatchEvent(new Event('blur', { bubbles: true }));
+      await this.setSelectValueReactCompatible(select, options[0].value, 0);
       log(`  ⚠️ ULTRA-FALLBACK: Selected only available option: "${options[0].text}"`, 'warn');
-      await sleep(80); // SPEED BOOST: Reduced from 150
+      await sleep(100);
       return;
     }
 
     log(`  ❌ ERROR: Dropdown has NO options at all!`, 'error');
+  }
+
+  /**
+   * Set select value in a React-compatible way
+   * This ensures LinkedIn's React forms recognize the change
+   */
+  async setSelectValueReactCompatible(select, value, index) {
+    try {
+      // CRITICAL: Use native setter for React compatibility
+      const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+        window.HTMLSelectElement.prototype,
+        'value'
+      ).set;
+
+      // Focus the select first
+      select.focus();
+      await sleep(50);
+
+      // Set selectedIndex first
+      select.selectedIndex = index;
+
+      // Set value using native setter (React recognizes this)
+      nativeInputValueSetter.call(select, value);
+
+      // Trigger input event first (React listens to this)
+      const inputEvent = new Event('input', { bubbles: true });
+      select.dispatchEvent(inputEvent);
+
+      // Small delay between events
+      await sleep(50);
+
+      // Then trigger change event
+      const changeEvent = new Event('change', { bubbles: true });
+      select.dispatchEvent(changeEvent);
+
+      // Blur to complete the interaction
+      await sleep(50);
+      select.blur();
+
+      log(`  🔧 React-compatible value set: "${value}" (index: ${index})`, 'info');
+    } catch (error) {
+      log(`  ⚠️ Error in React-compatible setter, using fallback: ${error.message}`, 'warn');
+
+      // Fallback to basic approach
+      select.selectedIndex = index;
+      select.value = value;
+      select.focus();
+      select.dispatchEvent(new Event('focus', { bubbles: true }));
+      select.dispatchEvent(new Event('input', { bubbles: true }));
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      select.dispatchEvent(new Event('blur', { bubbles: true }));
+      select.blur();
+    }
   }
 
   /**
@@ -2067,8 +2092,14 @@ class LinkedInEasyApplyBot {
 
     // STEP 1: Click the dropdown to expand it
     log(`  Clicking dropdown to expand...`, 'info');
+
+    // Scroll dropdown into view first
+    dropdown.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    await sleep(200);
+
+    // Click to open
     dropdown.click();
-    await sleep(150); // SPEED BOOST: Reduced from 300
+    await sleep(300); // Wait for dropdown to expand
 
     // STEP 2: Find the options list
     // LinkedIn typically shows options in a listbox with role="listbox"
@@ -2078,38 +2109,75 @@ class LinkedInEasyApplyBot {
       '.artdeco-dropdown__content-inner',
       '[data-test-dropdown-options]',
       'ul[role="menu"]',
-      '.select-list'
+      '.select-list',
+      '[aria-labelledby]'
     ];
 
     let optionsList = null;
-    for (const selector of optionsListSelectors) {
-      // Look for visible listbox in the document (may be in a portal/modal)
-      const lists = document.querySelectorAll(selector);
-      for (const list of lists) {
-        const style = window.getComputedStyle(list);
-        if (style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0') {
-          optionsList = list;
-          log(`  Found options list: ${selector}`, 'info');
-          break;
+    let attempts = 0;
+    const maxAttempts = 3;
+
+    // Try multiple times to find the options list (it may take time to appear)
+    while (!optionsList && attempts < maxAttempts) {
+      for (const selector of optionsListSelectors) {
+        // Look for visible listbox in the document (may be in a portal/modal)
+        const lists = document.querySelectorAll(selector);
+        for (const list of lists) {
+          const style = window.getComputedStyle(list);
+          if (style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0') {
+            optionsList = list;
+            log(`  Found options list: ${selector}`, 'info');
+            break;
+          }
         }
+        if (optionsList) break;
       }
-      if (optionsList) break;
+
+      if (!optionsList) {
+        attempts++;
+        log(`  Waiting for options list to appear (attempt ${attempts}/${maxAttempts})...`, 'info');
+        await sleep(200);
+      }
     }
 
     if (!optionsList) {
-      log(`  ❌ Could not find options list after expanding dropdown!`, 'error');
-      // Try to close the dropdown
-      dropdown.click();
+      log(`  ❌ Could not find options list after expanding dropdown and ${maxAttempts} attempts!`, 'error');
+      // Try to close the dropdown by clicking it again
+      try {
+        dropdown.click();
+      } catch (e) {
+        // Ignore close error
+      }
       return;
     }
 
     // STEP 3: Find all option elements
-    const optionElements = optionsList.querySelectorAll('[role="option"], li, .artdeco-dropdown__item, button');
-    log(`  Found ${optionElements.length} option elements`, 'info');
+    const optionSelectors = [
+      '[role="option"]',
+      'li',
+      '.artdeco-dropdown__item',
+      'button',
+      '[data-test-dropdown-item]',
+      '.select-list__item'
+    ];
+
+    let optionElements = [];
+    for (const selector of optionSelectors) {
+      const elements = optionsList.querySelectorAll(selector);
+      if (elements.length > 0) {
+        optionElements = Array.from(elements);
+        log(`  Found ${optionElements.length} option elements using: ${selector}`, 'info');
+        break;
+      }
+    }
 
     if (optionElements.length === 0) {
       log(`  ❌ No option elements found in list!`, 'error');
-      dropdown.click(); // Close dropdown
+      try {
+        dropdown.click(); // Close dropdown
+      } catch (e) {
+        // Ignore close error
+      }
       return;
     }
 
@@ -2140,8 +2208,16 @@ class LinkedInEasyApplyBot {
             optionLower.includes(targetLower) ||
             targetLower.includes(optionLower)) {
           log(`  ✅ Found matching option: "${optionText}"`, 'success');
+
+          // Scroll option into view
+          option.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          await sleep(100);
+
+          // Click the option
           option.click();
-          await sleep(100); // SPEED BOOST: Reduced from 200
+          await sleep(200);
+
+          log(`  ✅ Clicked matching option successfully`, 'success');
           return;
         }
       }
@@ -2167,8 +2243,16 @@ class LinkedInEasyApplyBot {
 
       // Select this option!
       log(`  ✅ FALLBACK: Selecting first valid option: "${optionText}"`, 'success');
+
+      // Scroll option into view
+      option.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      await sleep(100);
+
+      // Click the option
       option.click();
-      await sleep(100); // SPEED BOOST: Reduced from 200
+      await sleep(200);
+
+      log(`  ✅ Clicked fallback option successfully`, 'success');
       return;
     }
 
@@ -2177,15 +2261,21 @@ class LinkedInEasyApplyBot {
       const fallbackOption = optionElements[1]; // Skip first (likely placeholder)
       const fallbackText = (fallbackOption.textContent || fallbackOption.innerText || '').trim();
       log(`  ⚠️ ULTRA-FALLBACK: Selecting any option: "${fallbackText}"`, 'warn');
+
+      fallbackOption.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      await sleep(100);
       fallbackOption.click();
-      await sleep(100); // SPEED BOOST: Reduced from 200
+      await sleep(200);
       return;
     } else if (optionElements.length === 1) {
       const onlyOption = optionElements[0];
       const onlyText = (onlyOption.textContent || onlyOption.innerText || '').trim();
       log(`  ⚠️ ULTRA-FALLBACK: Selecting only option: "${onlyText}"`, 'warn');
+
+      onlyOption.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      await sleep(100);
       onlyOption.click();
-      await sleep(100); // SPEED BOOST: Reduced from 200
+      await sleep(200);
       return;
     }
 
