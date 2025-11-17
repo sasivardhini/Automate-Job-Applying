@@ -84,18 +84,42 @@ class LinkedInEasyApplyBot {
   }
 
   /**
-   * Add floating control panel to page
+   * Humanized delay - mimics human behavior with randomization
    */
-  addControlPanel() {
+  async humanDelay(baseDelay = null) {
+    if (!this.settings.humanizedTiming) {
+      await sleep(baseDelay || this.settings.applyDelay);
+      return;
+    }
+
+    const minDelay = this.settings.minDelay || SAFETY_LIMITS.MIN_DELAY_BETWEEN_ACTIONS;
+    const maxDelay = this.settings.maxDelay || SAFETY_LIMITS.MAX_DELAY_BETWEEN_ACTIONS;
+
+    // Add randomization for more human-like behavior
+    const delay = baseDelay || randomDelay(minDelay, maxDelay);
+    const variance = delay * 0.2; // ±20% variance
+    const finalDelay = delay + (Math.random() * variance * 2 - variance);
+
+    await sleep(Math.max(minDelay, Math.floor(finalDelay)));
+  }
+
+  /**
+   * Add floating control panel to page - PROFESSIONAL DASHBOARD
+   */
+  async addControlPanel() {
     const panel = document.createElement('div');
     panel.id = 'easy-apply-control-panel';
 
     // Check if profile is complete
     const profileComplete = this.profile.jobTitle && this.profile.jobTitle.trim() !== '';
 
+    // Get analytics and rate limits
+    const analytics = await Storage.getAnalytics();
+    const rateLimits = await Storage.checkRateLimits();
+
     panel.innerHTML = `
       <div class="easy-apply-panel-header">
-        <span>🤖 Easy Apply Bot</span>
+        <span>🤖 Easy Apply Bot v2.0</span>
         <button id="easy-apply-toggle" class="easy-apply-btn">
           ${this.settings.autoApply ? 'Stop' : 'Start'}
         </button>
@@ -112,15 +136,36 @@ class LinkedInEasyApplyBot {
             </ol>
           </div>
         ` : ''}
+
+        <div class="easy-apply-stats" id="easy-apply-stats">
+          <strong>📊 Today's Statistics:</strong>
+          <div class="stats-grid">
+            <div class="stat-item">
+              <span class="stat-value" id="stat-applied">${rateLimits.daily.count}</span>
+              <span class="stat-label">Applied</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-value" id="stat-remaining">${rateLimits.daily.remaining}</span>
+              <span class="stat-label">Remaining</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-value" id="stat-success-rate">${analytics.successRate || 0}%</span>
+              <span class="stat-label">Success Rate</span>
+            </div>
+          </div>
+        </div>
+
         <div class="easy-apply-status">
           <strong>Status:</strong> <span id="easy-apply-status">Idle</span>
         </div>
+
         <div class="easy-apply-activity" id="easy-apply-activity">
           <strong>Activity:</strong>
           <div id="easy-apply-activity-log" class="activity-log">
             <div class="activity-item">Waiting to start...</div>
           </div>
         </div>
+
         <button id="search-and-apply-btn" class="easy-apply-search-btn">🔍 Search & Apply</button>
         <div class="easy-apply-hint">💡 Open Console (F12) for detailed logs</div>
       </div>
@@ -137,6 +182,29 @@ class LinkedInEasyApplyBot {
     document.getElementById('search-and-apply-btn').addEventListener('click', () => {
       this.searchAndApply();
     });
+
+    // Start statistics update interval
+    this.startStatsUpdater();
+  }
+
+  /**
+   * Update statistics in real-time
+   */
+  startStatsUpdater() {
+    // Update stats every 10 seconds
+    setInterval(async () => {
+      const analytics = await Storage.getAnalytics();
+      const rateLimits = await Storage.checkRateLimits();
+
+      // Update UI elements
+      const appliedEl = document.getElementById('stat-applied');
+      const remainingEl = document.getElementById('stat-remaining');
+      const successRateEl = document.getElementById('stat-success-rate');
+
+      if (appliedEl) appliedEl.textContent = rateLimits.daily.count;
+      if (remainingEl) remainingEl.textContent = rateLimits.daily.remaining;
+      if (successRateEl) successRateEl.textContent = `${analytics.successRate || 0}%`;
+    }, 10000); // Every 10 seconds
   }
 
   /**
@@ -451,12 +519,35 @@ class LinkedInEasyApplyBot {
   }
 
   /**
-   * Find and apply to the next available job - IMPROVED STRATEGY
+   * Find and apply to the next available job - PROFESSIONAL GRADE
    */
   async findAndApplyToNextJob() {
     log('🔍 Looking for jobs to apply to...', 'info');
     this.updateStatus('Searching for jobs...');
     this.addActivityLog('Searching for job cards...');
+
+    // CRITICAL: Check rate limits before proceeding
+    const rateLimits = await Storage.checkRateLimits();
+
+    if (rateLimits.hourly.exceeded) {
+      log(`⚠️  Hourly limit reached (${rateLimits.hourly.count}/${rateLimits.hourly.limit})`, 'warn');
+      this.addActivityLog(`⏸️  Hourly limit reached - pausing`, 'warn');
+      showNotification(`Hourly limit reached. Cool down for ${Math.ceil(SAFETY_LIMITS.COOL_DOWN_PERIOD / 60000)} minutes.`, 'warn');
+
+      // Wait for cool-down period
+      await sleep(SAFETY_LIMITS.COOL_DOWN_PERIOD);
+      return false;
+    }
+
+    if (rateLimits.daily.exceeded) {
+      log(`⚠️  Daily limit reached (${rateLimits.daily.count}/${rateLimits.daily.limit})`, 'warn');
+      this.addActivityLog(`🛑 Daily limit reached`, 'error');
+      showNotification('Daily application limit reached!', 'warn');
+      this.stopAutoApply();
+      return false;
+    }
+
+    log(`📊 Rate limits - Hourly: ${rateLimits.hourly.remaining} remaining | Daily: ${rateLimits.daily.remaining} remaining`, 'info');
 
     // STRATEGY: Find job cards first, then look for Easy Apply button
     const jobCards = this.findJobCards();
@@ -522,6 +613,20 @@ class LinkedInEasyApplyBot {
 
       log(`📄 Job: ${jobDetails.jobTitle} at ${jobDetails.companyName}`, 'info');
       this.addActivityLog(`Checking: ${jobDetails.jobTitle}`);
+
+      // PROFESSIONAL: Check if company is blacklisted
+      if (this.settings.skipBlacklistedCompanies) {
+        const isBlacklisted = await Storage.isBlacklisted(jobDetails.companyName);
+        if (isBlacklisted) {
+          log(`🚫 Company "${jobDetails.companyName}" is blacklisted, skipping...`, 'warn');
+          this.addActivityLog(`Blacklisted company, skipping`, 'warn');
+          await Storage.addApplication({
+            ...jobDetails,
+            status: APPLICATION_STATUS.BLOCKED
+          });
+          continue;
+        }
+      }
 
       // Check if already applied
       if (this.settings.skipApplied) {
@@ -780,7 +885,7 @@ class LinkedInEasyApplyBot {
   }
 
   /**
-   * Apply to a job
+   * Apply to a job - PROFESSIONAL GRADE WITH ANALYTICS
    */
   async applyToJob(button, jobDetails) {
     if (this.applicationInProgress) return false;
@@ -792,12 +897,16 @@ class LinkedInEasyApplyBot {
     log(`Starting application for: ${jobDetails.jobTitle} at ${jobDetails.companyName}`, 'info');
     this.addActivityLog(`Applying to ${jobDetails.jobTitle}...`);
 
+    const startTime = Date.now(); // Track application time
     let applicationSuccess = false;
 
     try {
       // Click Easy Apply button
       this.addActivityLog('Clicking Easy Apply button...');
       await clickElement(button, 1000);
+
+      // Humanized delay
+      await this.humanDelay(800);
 
       // Wait for modal to appear
       this.addActivityLog('Waiting for application form...');
@@ -812,13 +921,35 @@ class LinkedInEasyApplyBot {
       const success = await this.processApplicationForm();
 
       if (success) {
-        log('✅ Application submitted successfully!', 'success');
+        const timeSpent = Date.now() - startTime;
+
+        log(`✅ Application submitted successfully in ${(timeSpent / 1000).toFixed(1)}s!`, 'success');
         showNotification(`Applied to ${jobDetails.jobTitle}`, 'success');
         this.addActivityLog(`✅ Successfully applied!`, 'success');
 
+        // Track analytics
+        const analytics = await Storage.getAnalytics();
+        await Storage.updateAnalytics({
+          totalAttempts: analytics.totalAttempts + 1,
+          successfulApplications: analytics.successfulApplications + 1,
+          totalTimeSpent: analytics.totalTimeSpent + timeSpent,
+          averageTimePerJob: Math.round((analytics.totalTimeSpent + timeSpent) / (analytics.successfulApplications + 1)),
+          lastRunDate: Date.now()
+        });
+
         await Storage.addApplication({
           ...jobDetails,
-          status: APPLICATION_STATUS.APPLIED
+          status: APPLICATION_STATUS.APPLIED,
+          timeSpent
+        });
+
+        // Add to history
+        await Storage.addHistory({
+          action: 'application_success',
+          jobId: jobDetails.jobId,
+          jobTitle: jobDetails.jobTitle,
+          companyName: jobDetails.companyName,
+          timeSpent
         });
 
         applicationSuccess = true;
@@ -826,14 +957,48 @@ class LinkedInEasyApplyBot {
         throw new Error('Application process failed');
       }
     } catch (error) {
+      const timeSpent = Date.now() - startTime;
+
       log(`❌ Application failed: ${error.message}`, 'error');
       showNotification(`Failed: ${error.message}`, 'error');
       this.addActivityLog(`❌ Failed: ${error.message}`, 'error');
 
+      // Determine error type
+      let errorType = ERROR_TYPES.UNKNOWN;
+      if (error.message.includes('validation')) errorType = ERROR_TYPES.FORM_VALIDATION;
+      else if (error.message.includes('network')) errorType = ERROR_TYPES.NETWORK;
+      else if (error.message.includes('session')) errorType = ERROR_TYPES.SESSION_EXPIRED;
+      else if (error.message.includes('element') || error.message.includes('not found')) errorType = ERROR_TYPES.ELEMENT_NOT_FOUND;
+      else if (error.message.includes('timeout')) errorType = ERROR_TYPES.TIMEOUT;
+
+      // Track analytics
+      const analytics = await Storage.getAnalytics();
+      await Storage.updateAnalytics({
+        totalAttempts: analytics.totalAttempts + 1,
+        failedApplications: analytics.failedApplications + 1,
+        totalTimeSpent: analytics.totalTimeSpent + timeSpent,
+        lastRunDate: Date.now()
+      });
+
+      await Storage.trackError(errorType);
+
       await Storage.addApplication({
         ...jobDetails,
         status: APPLICATION_STATUS.FAILED,
-        error: error.message
+        error: error.message,
+        errorType,
+        timeSpent
+      });
+
+      // Add to history
+      await Storage.addHistory({
+        action: 'application_failed',
+        jobId: jobDetails.jobId,
+        jobTitle: jobDetails.jobTitle,
+        companyName: jobDetails.companyName,
+        error: error.message,
+        errorType,
+        timeSpent
       });
 
       applicationSuccess = false;
@@ -844,6 +1009,12 @@ class LinkedInEasyApplyBot {
 
       // Close modal if still open
       await this.closeModal();
+
+      // Humanized delay between applications
+      if (applicationSuccess && this.settings.pauseBetweenJobs) {
+        log(`Pausing for ${this.settings.pauseBetweenJobs / 1000}s before next job...`, 'info');
+        await this.humanDelay(this.settings.pauseBetweenJobs);
+      }
     }
 
     return applicationSuccess;
