@@ -1477,8 +1477,12 @@ class LinkedInEasyApplyBot {
       'close',
       'back',
       'dismiss',
+      'discard',
       'skip',
       'later',
+      'dialog',
+      'modal',
+      'x',  // Close button with X symbol
       'filter',
       'filters',
       'sort',
@@ -1609,13 +1613,30 @@ class LinkedInEasyApplyBot {
       'Application submitted',
       'Your application was sent',
       'successfully applied',
-      'Application complete'
+      'Application complete',
+      'Applied',  // Matches "Applied 8 seconds ago"
+      'Application was sent',
+      'application sent to'
     ];
 
     const pageText = document.body.textContent;
-    return successIndicators.some(indicator =>
+
+    // Check for "Applied X seconds/minutes ago" pattern
+    if (/Applied\s+\d+\s+(second|minute|hour|day)s?\s+ago/i.test(pageText)) {
+      log('✅ Detected success: "Applied X time ago" pattern', 'success');
+      return true;
+    }
+
+    // Check standard success indicators
+    const found = successIndicators.some(indicator =>
       pageText.toLowerCase().includes(indicator.toLowerCase())
     );
+
+    if (found) {
+      log('✅ Detected success via indicator text', 'success');
+    }
+
+    return found;
   }
 
   /**
@@ -1636,8 +1657,13 @@ class LinkedInEasyApplyBot {
       'cancel',
       'back',
       'dismiss',
+      'discard',
       'skip',
       'later',
+      'close',
+      'dialog',
+      'modal',
+      'x',  // Close button with X symbol
       'filter',
       'filters',
       'sort',
@@ -2219,9 +2245,26 @@ class LinkedInEasyApplyBot {
     // Try to match based on question type
     const questionType = detectQuestionType(label || '');
     if (questionType) {
-      const value = await Storage.getAnswerForQuestion(questionType, this.profile);
+      let value = await Storage.getAnswerForQuestion(questionType, this.profile);
       if (value) {
         log(`  Detected question type: ${questionType}, trying to select: "${value}"`, 'info');
+
+        // SMART HANDLING: For Yes/No questions, be flexible with matching
+        const lowerLabel = (label || '').toLowerCase();
+        const isYesNoQuestion = options.length <= 3 && (
+          options.some(opt => (opt.text || '').toLowerCase().includes('yes')) ||
+          options.some(opt => (opt.text || '').toLowerCase().includes('no'))
+        );
+
+        // If it's a Yes/No question and we got a long answer like "Left the job", convert it
+        if (isYesNoQuestion) {
+          if (value.toLowerCase().includes('left') || value.toLowerCase().includes('no')) {
+            value = 'No';
+          } else if (value.toLowerCase().includes('yes') || value.toLowerCase().includes('serving')) {
+            value = 'Yes';
+          }
+          log(`  Smart Yes/No conversion: "${value}"`, 'info');
+        }
 
         // Try exact match first, then partial match
         const valueToMatch = value.toLowerCase().trim();
@@ -2387,6 +2430,19 @@ class LinkedInEasyApplyBot {
     if (questionType) {
       targetValue = await Storage.getAnswerForQuestion(questionType, this.profile);
       log(`  Detected question type: ${questionType}, looking for: "${targetValue}"`, 'info');
+
+      // SMART HANDLING: For Yes/No questions, convert long answers to Yes/No
+      const lowerLabel = (label || '').toLowerCase();
+      if (targetValue && (lowerLabel.includes('yes') || lowerLabel.includes('no') ||
+          lowerLabel.includes('serving') || lowerLabel.includes('notice'))) {
+        if (targetValue.toLowerCase().includes('left') || targetValue.toLowerCase().includes('no')) {
+          targetValue = 'No';
+          log(`  Smart Yes/No conversion for custom dropdown: "No"`, 'info');
+        } else if (targetValue.toLowerCase().includes('yes') || targetValue.toLowerCase().includes('serving')) {
+          targetValue = 'Yes';
+          log(`  Smart Yes/No conversion for custom dropdown: "Yes"`, 'info');
+        }
+      }
     }
 
     // STEP 1: Click the dropdown to expand it
@@ -2394,11 +2450,16 @@ class LinkedInEasyApplyBot {
 
     // Scroll dropdown into view first
     dropdown.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    await sleep(200);
+    await sleep(300);
 
-    // Click to open
-    dropdown.click();
-    await sleep(300); // Wait for dropdown to expand
+    // Click to open - try multiple methods for reliability
+    try {
+      dropdown.click();
+    } catch (e) {
+      // Fallback: dispatch mouse event
+      dropdown.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    }
+    await sleep(500); // Wait LONGER for dropdown to expand (increased from 300)
 
     // STEP 2: Find the options list
     // LinkedIn typically shows options in a listbox with role="listbox"
@@ -2414,7 +2475,7 @@ class LinkedInEasyApplyBot {
 
     let optionsList = null;
     let attempts = 0;
-    const maxAttempts = 3;
+    const maxAttempts = 5;  // Increased from 3 to 5 for more retries
 
     // Try multiple times to find the options list (it may take time to appear)
     while (!optionsList && attempts < maxAttempts) {
@@ -2435,7 +2496,7 @@ class LinkedInEasyApplyBot {
       if (!optionsList) {
         attempts++;
         log(`  Waiting for options list to appear (attempt ${attempts}/${maxAttempts})...`, 'info');
-        await sleep(200);
+        await sleep(300);  // Increased from 200 to 300 for better reliability
       }
     }
 
@@ -2510,11 +2571,16 @@ class LinkedInEasyApplyBot {
 
           // Scroll option into view
           option.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-          await sleep(100);
+          await sleep(150);
 
-          // Click the option
-          option.click();
-          await sleep(200);
+          // Click the option with multiple methods for reliability
+          try {
+            option.click();
+          } catch (e) {
+            // Fallback: dispatch mouse event
+            option.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+          }
+          await sleep(300);  // Wait longer to ensure selection is registered
 
           log(`  ✅ Clicked matching option successfully`, 'success');
           return;
@@ -2545,11 +2611,16 @@ class LinkedInEasyApplyBot {
 
       // Scroll option into view
       option.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      await sleep(100);
+      await sleep(150);
 
-      // Click the option
-      option.click();
-      await sleep(200);
+      // Click the option with multiple methods for reliability
+      try {
+        option.click();
+      } catch (e) {
+        // Fallback: dispatch mouse event
+        option.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      }
+      await sleep(300);  // Wait longer to ensure selection is registered
 
       log(`  ✅ Clicked fallback option successfully`, 'success');
       return;
@@ -2562,9 +2633,13 @@ class LinkedInEasyApplyBot {
       log(`  ⚠️ ULTRA-FALLBACK: Selecting any option: "${fallbackText}"`, 'warn');
 
       fallbackOption.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      await sleep(100);
-      fallbackOption.click();
-      await sleep(200);
+      await sleep(150);
+      try {
+        fallbackOption.click();
+      } catch (e) {
+        fallbackOption.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      }
+      await sleep(300);
       return;
     } else if (optionElements.length === 1) {
       const onlyOption = optionElements[0];
