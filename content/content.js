@@ -58,7 +58,7 @@ class LinkedInEasyApplyBot {
 
     // Add control panel
     await sleep(1000);
-    this.addControlPanel();
+    await this.addControlPanel();
 
     // Start monitoring for jobs
     this.observePage();
