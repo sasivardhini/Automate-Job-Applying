@@ -2067,7 +2067,10 @@ class LinkedInEasyApplyBot {
         await fillInput(field, value);
         log(`  ✅ Filled number field with: "${value}"`, 'success');
       } else {
-        log(`  ⚠️  No numeric value determined for: ${label || fieldName}`, 'warn');
+        // FALLBACK: If we can't determine a value, use a safe default
+        const defaultValue = '1';
+        await fillInput(field, defaultValue);
+        log(`  ⚠️  No specific value determined for: ${label || fieldName}, using default: "${defaultValue}"`, 'warn');
       }
       return;
     }
@@ -2134,16 +2137,14 @@ class LinkedInEasyApplyBot {
 
     // PRIORITY 1: Years of experience questions
     if (lowerLabel.includes('year') && (lowerLabel.includes('experience') || lowerLabel.includes('work'))) {
-      // Check for specific technologies
-      if (lowerLabel.includes('python') || lowerLabel.includes('java') ||
-          lowerLabel.includes('javascript') || lowerLabel.includes('typescript') ||
-          lowerLabel.includes('node') || lowerLabel.includes('react') ||
-          lowerLabel.includes('saas') || lowerLabel.includes('web') ||
-          lowerLabel.includes('forge') || lowerLabel.includes('elastic')) {
-        return needsDecimal ? '2.0' : '2'; // Default 2 years for specific tech
+      // Check if asking about specific technology/skill (has "with" in question)
+      if (lowerLabel.includes(' with ') || lowerLabel.includes('experience with')) {
+        // Asking about specific technology (Python, AMLS, Data Science, etc.)
+        return needsDecimal ? '2.0' : '2'; // Default 2 years for any specific tech/skill
       }
+      // General total work experience
       const expValue = this.profile.yearsExperience || '3';
-      return needsDecimal ? `${expValue}.0` : expValue; // General experience
+      return needsDecimal ? `${expValue}.0` : expValue;
     }
 
     // PRIORITY 2: Notice period (numeric) - SMART DECIMAL DETECTION

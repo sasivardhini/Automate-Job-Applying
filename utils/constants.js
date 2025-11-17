@@ -80,7 +80,9 @@ const QUESTION_PATTERNS = {
   REFERENCES: /references|professional.*references|can.*contact/i,
   COMMUTE: /commute|travel.*distance|willing.*travel|daily.*commute/i,
   SHIFT_PREFERENCE: /shift.*preference|preferred.*shift|night.*shift|day.*shift/i,
-  OVERTIME: /overtime|work.*extra.*hours|flexible.*timing/i
+  OVERTIME: /overtime|work.*extra.*hours|flexible.*timing/i,
+  CONTRACT: /ok.*contract|contract.*role|contract.*position|contract.*job|comfortable.*contract|accept.*contract|contract.*work/i,
+  OK_WITH: /ok with|okay with|comfortable with|fine with|accept/i
 };
 
 // Advanced settings with AI features

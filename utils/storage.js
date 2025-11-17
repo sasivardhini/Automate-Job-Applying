@@ -217,6 +217,8 @@ const Storage = {
       // Work Details
       'CURRENT_EMPLOYER': 'Confidential',
       'MANAGE_TEAM': '0',
+      'CONTRACT': 'Yes', // Ok with contract work
+      'OK_WITH': 'Yes', // Default yes for "ok with" questions
 
       // Open-ended questions
       'WHY_WORK': 'I am excited about this opportunity and believe my skills align well with your requirements.',
