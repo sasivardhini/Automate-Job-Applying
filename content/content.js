@@ -1112,10 +1112,20 @@ class LinkedInEasyApplyBot {
         return true;
       }
 
-      // Fill all visible fields on current page
-      log('📝 Filling all fields on current page...', 'info');
+      // Fill all visible fields on current page - MULTIPLE PASSES for reliability
+      log('📝 PASS 1: Filling all fields on current page...', 'info');
       await this.fillCurrentForm();
-      await sleep(800);
+      await sleep(1000);  // Wait longer for form state to update
+
+      // PASS 2: Fill any remaining unfilled fields (dropdowns often need retry)
+      log('📝 PASS 2: Filling any remaining unfilled fields...', 'info');
+      await this.fillCurrentForm();
+      await sleep(1000);  // Wait for buttons to become enabled
+
+      // PASS 3: One more aggressive pass for stubborn fields
+      log('📝 PASS 3: Final aggressive fill for any remaining fields...', 'info');
+      await this.fillCurrentForm();
+      await sleep(1500);  // Wait longer to ensure all form processing is done
 
       // Find and click the appropriate button based on LinkedIn flow
       log('🔍 Finding next button to click...', 'info');
@@ -1170,16 +1180,36 @@ class LinkedInEasyApplyBot {
 
       // If no button found, check if we need to fill more fields
       if (!clicked) {
-        log('⚠️ No button found - checking for unfilled fields...', 'warn');
+        log('⚠️ No enabled button found - checking form state...', 'warn');
+
+        // Check if there are disabled buttons (means fields need to be filled)
+        const modal = document.querySelector('.jobs-easy-apply-modal, [data-test-modal], .artdeco-modal[role="dialog"]');
+        if (modal) {
+          const disabledButtons = modal.querySelectorAll('button:disabled');
+          const disabledButtonTexts = Array.from(disabledButtons).map(btn =>
+            (btn.textContent || '').trim()
+          ).filter(text => text.length > 0);
+
+          if (disabledButtonTexts.length > 0) {
+            log(`  ℹ️ Found ${disabledButtons.length} disabled buttons: ${disabledButtonTexts.join(', ')}`, 'info');
+            log(`  ⏳ Buttons are disabled - form fields may need to be filled`, 'warn');
+          }
+        }
 
         const requiredFields = this.findUnfilledRequiredFields();
         if (requiredFields.length > 0) {
-          log(`📝 Found ${requiredFields.length} unfilled required fields - filling them...`, 'info');
+          log(`📝 Found ${requiredFields.length} unfilled required fields - filling them aggressively...`, 'info');
           for (const field of requiredFields) {
             await this.fillFieldIntelligent(field);
             await sleep(300);
           }
-          await sleep(500);
+          await sleep(1000);  // Wait longer after filling
+
+          // Try one more time to fill everything
+          log(`📝 One more complete fill pass after required fields...`, 'info');
+          await this.fillCurrentForm();
+          await sleep(1000);
+
           continue; // Try again after filling fields
         }
 
@@ -1190,7 +1220,11 @@ class LinkedInEasyApplyBot {
         }
 
         // No button and no fields - stuck
-        log('❌ No button found and no fields to fill - application stuck or failed', 'error');
+        log('❌ No enabled button found and no unfilled required fields detected', 'error');
+        log('⚠️ This may indicate:', 'warn');
+        log('  1. All required fields are filled but button is still disabled (LinkedIn bug)', 'warn');
+        log('  2. Some dropdown fields failed to fill properly', 'warn');
+        log('  3. Form validation is blocking progression', 'warn');
         return false;
       }
 
@@ -2548,6 +2582,51 @@ class LinkedInEasyApplyBot {
       return;
     }
 
+    // SPECIAL CASE: Check if this is actually a text input with autocomplete
+    const inputField = dropdown.querySelector('input[type="text"], input:not([type])');
+    if (inputField && !inputField.disabled && !inputField.value) {
+      log(`  ℹ️ This dropdown contains a text input - trying typeahead approach`, 'info');
+
+      const questionType = detectQuestionType(label || '');
+      if (questionType) {
+        const targetValue = await Storage.getAnswerForQuestion(questionType, this.profile);
+        if (targetValue) {
+          log(`  Detected question type: ${questionType}, value: "${targetValue}"`, 'info');
+
+          // Try typing the value
+          try {
+            inputField.focus();
+            await sleep(100);
+
+            // Set value using React-compatible method
+            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+            nativeInputValueSetter.call(inputField, targetValue);
+
+            inputField.dispatchEvent(new Event('input', { bubbles: true }));
+            inputField.dispatchEvent(new Event('change', { bubbles: true }));
+            inputField.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+            await sleep(600);  // Wait for autocomplete to appear
+
+            // Try to select first option if autocomplete appeared
+            const autocompleteOption = document.querySelector('[role="option"]:not([aria-disabled="true"])');
+            if (autocompleteOption) {
+              log(`  ✅ Found autocomplete option, clicking it`, 'success');
+              autocompleteOption.click();
+              await sleep(300);
+              return;
+            }
+
+            log(`  ✅ Typed value into dropdown input`, 'success');
+            return;
+          } catch (e) {
+            log(`  ⚠️ Failed to type into dropdown input: ${e.message}`, 'warn');
+            // Continue with regular dropdown approach below
+          }
+        }
+      }
+    }
+
     // Detect question type from label
     const questionType = detectQuestionType(label || '');
     let targetValue = null;
@@ -2575,64 +2654,138 @@ class LinkedInEasyApplyBot {
 
     // Scroll dropdown into view first
     dropdown.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    await sleep(300);
+    await sleep(500);
 
-    // Click to open - try multiple methods for reliability
+    // AGGRESSIVE: Try multiple clicking methods to ensure dropdown opens
+    // Method 1: Direct click
     try {
       dropdown.click();
+      await sleep(200);
     } catch (e) {
-      // Fallback: dispatch mouse event
-      dropdown.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      log(`  Click method 1 failed: ${e.message}`, 'warn');
     }
-    await sleep(500); // Wait LONGER for dropdown to expand (increased from 300)
+
+    // Method 2: Find and click any child button/clickable element
+    const clickableChild = dropdown.querySelector('button, [role="button"], input');
+    if (clickableChild) {
+      try {
+        clickableChild.click();
+        await sleep(200);
+      } catch (e) {
+        log(`  Click method 2 failed: ${e.message}`, 'warn');
+      }
+    }
+
+    // Method 3: Mouse events
+    try {
+      dropdown.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+      dropdown.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+      dropdown.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      await sleep(200);
+    } catch (e) {
+      log(`  Click method 3 failed: ${e.message}`, 'warn');
+    }
+
+    // Method 4: Focus and keyboard (Arrow Down to open dropdown)
+    try {
+      dropdown.focus();
+      await sleep(100);
+      dropdown.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', code: 'ArrowDown', bubbles: true }));
+      dropdown.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowDown', code: 'ArrowDown', bubbles: true }));
+      await sleep(300);
+    } catch (e) {
+      log(`  Keyboard method failed: ${e.message}`, 'warn');
+    }
+
+    // Wait LONGER for dropdown to fully expand
+    await sleep(800);
 
     // STEP 2: Find the options list
     // LinkedIn typically shows options in a listbox with role="listbox"
     const optionsListSelectors = [
       '[role="listbox"]',
+      'ul[role="listbox"]',
+      'div[role="listbox"]',
       '.artdeco-dropdown__content',
       '.artdeco-dropdown__content-inner',
       '[data-test-dropdown-options]',
       'ul[role="menu"]',
       '.select-list',
-      '[aria-labelledby]'
+      '[aria-labelledby]',
+      '.artdeco-dropdown__content ul',
+      '.artdeco-dropdown ul',
+      'div[class*="dropdown"] ul',
+      'div[class*="select"] ul',
+      '[aria-expanded="true"] + ul',
+      '[aria-expanded="true"] + div[role="listbox"]',
+      'ul.artdeco-dropdown__list',
+      '.fb-dash-form-element__dropdown-options'
     ];
 
     let optionsList = null;
     let attempts = 0;
-    const maxAttempts = 5;  // Increased from 3 to 5 for more retries
+    const maxAttempts = 8;  // Increased to 8 for more retries
 
     // Try multiple times to find the options list (it may take time to appear)
     while (!optionsList && attempts < maxAttempts) {
+      attempts++;
+
       for (const selector of optionsListSelectors) {
-        // Look for visible listbox in the document (may be in a portal/modal)
-        const lists = document.querySelectorAll(selector);
-        for (const list of lists) {
-          const style = window.getComputedStyle(list);
-          if (style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0') {
-            optionsList = list;
-            log(`  Found options list: ${selector}`, 'info');
-            break;
+        try {
+          // Look for visible listbox in the document (may be in a portal/modal)
+          const lists = document.querySelectorAll(selector);
+          for (const list of lists) {
+            const style = window.getComputedStyle(list);
+            const rect = list.getBoundingClientRect();
+
+            // Check if visible and has size
+            if (style.display !== 'none' &&
+                style.visibility !== 'hidden' &&
+                style.opacity !== '0' &&
+                rect.width > 0 &&
+                rect.height > 0) {
+              optionsList = list;
+              log(`  ✅ Found options list: ${selector}`, 'success');
+              break;
+            }
           }
+          if (optionsList) break;
+        } catch (e) {
+          // Ignore selector errors
         }
-        if (optionsList) break;
       }
 
-      if (!optionsList) {
-        attempts++;
-        log(`  Waiting for options list to appear (attempt ${attempts}/${maxAttempts})...`, 'info');
-        await sleep(300);  // Increased from 200 to 300 for better reliability
+      if (!optionsList && attempts < maxAttempts) {
+        log(`  ⏳ Waiting for options list to appear (attempt ${attempts}/${maxAttempts})...`, 'info');
+
+        // Try clicking again to ensure dropdown is open
+        if (attempts % 2 === 0) {
+          try {
+            dropdown.click();
+            await sleep(200);
+          } catch (e) {
+            // Ignore
+          }
+        }
+
+        await sleep(400);  // Increased wait time
       }
     }
 
     if (!optionsList) {
-      log(`  ❌ Could not find options list after expanding dropdown and ${maxAttempts} attempts!`, 'error');
+      log(`  ⚠️ Could not find options list after ${maxAttempts} attempts - this dropdown may need manual handling`, 'warn');
+      log(`  ℹ️ Dropdown info: ${dropdown.outerHTML.substring(0, 200)}...`, 'info');
+
       // Try to close the dropdown by clicking it again
       try {
         dropdown.click();
+        await sleep(200);
       } catch (e) {
         // Ignore close error
       }
+
+      // DON'T return - continue to next dropdown instead of failing
+      log(`  ⏩ Continuing to next field...`, 'info');
       return;
     }
 
