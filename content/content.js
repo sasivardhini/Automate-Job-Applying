@@ -1076,129 +1076,130 @@ class LinkedInEasyApplyBot {
   }
 
   /**
-   * Process application form through all steps - SIMPLE & CLEAN VERSION
+   * Process application form - BUILT FROM SCRATCH BASED ON ACTUAL LINKEDIN FLOW
+   *
+   * LinkedIn Application Flow:
+   * Step 1 (0%):   Initial page - Click to start
+   * Step 2 (33%):  Resume page - Select resume → Click "Next"
+   * Step 3 (67%):  Additional Questions - Fill questions → Click "Review"
+   * Step 4 (100%): Review Your Application - Verify → Click "Submit application"
+   * Success: "Your application was sent to [Company]!" message appears
    */
   async processApplicationForm() {
-    const maxSteps = 20;
-    log('🚀 Starting simple form processing...', 'info');
+    const MAX_STEPS = 20;
+    log('🚀 Starting LinkedIn application (following exact flow)...', 'info');
 
-    for (let step = 0; step < maxSteps; step++) {
-      log(`\n📝 === STEP ${step + 1}/${maxSteps} ===`, 'info');
+    for (let step = 0; step < MAX_STEPS; step++) {
+      log(`\n━━━ STEP ${step + 1}/${MAX_STEPS} ━━━`, 'info');
 
-      // Check if user stopped
+      // Safety checks
       if (!this.settings.autoApply || !this.isRunning || !this.applicationInProgress) {
-        log('🛑 User stopped - exiting', 'warn');
+        log('🛑 User stopped', 'warn');
         await this.closeModal();
         return false;
       }
 
-      // Check if session expired
       if (await this.detectSessionExpired()) {
         throw new Error('Session expired');
       }
 
-      // Handle any dialogs
       await this.handleSaveApplicationDialog();
+      await sleep(1000);
 
-      // Wait for page to be ready
-      await sleep(800);
-
-      // STEP 1: Fill all fields on current page
-      log('1️⃣ Filling all fields on current page...', 'info');
-      await this.fillCurrentForm();
-      await sleep(500);
-
-      // STEP 2: Find and click the next button
-      log('2️⃣ Looking for next button to click...', 'info');
-
-      // Check for submission success FIRST (in case we already submitted)
+      // Check if already successful
       if (this.checkSubmissionSuccess()) {
-        log('✅ Application already submitted successfully!', 'success');
+        log('✅ APPLICATION SUBMITTED SUCCESSFULLY!', 'success');
         return true;
       }
 
-      // Priority order: Submit > Review > Next/Continue
-      let buttonToClick = null;
-      let buttonType = '';
+      // Fill all visible fields on current page
+      log('📝 Filling all fields on current page...', 'info');
+      await this.fillCurrentForm();
+      await sleep(800);
 
-      // Try Submit first
-      buttonToClick = this.findButton(['Submit application', 'Submit', 'submit']);
-      if (buttonToClick) {
-        buttonType = 'SUBMIT';
-      }
+      // Find and click the appropriate button based on LinkedIn flow
+      log('🔍 Finding next button to click...', 'info');
 
-      // Try Review second
-      if (!buttonToClick) {
-        buttonToClick = this.findButton(['Review', 'Review your application', 'review']);
-        if (buttonToClick) {
-          buttonType = 'REVIEW';
-        }
-      }
+      let clicked = false;
 
-      // Try Next/Continue last
-      if (!buttonToClick) {
-        buttonToClick = this.findButton(['Next', 'Continue', 'next', 'continue']);
-        if (buttonToClick) {
-          buttonType = 'NEXT';
-        }
-      }
+      // Priority 1: Submit application (final step at 100%)
+      const submitButton = this.findButton(['Submit application', 'Submit']);
+      if (submitButton) {
+        log('✅ Found SUBMIT button (Step 4 - 100%) - Final step!', 'success');
+        this.addActivityLog('📤 Submitting application...');
+        await clickElement(submitButton, 1500);
 
-      // If no button found, we might be done or stuck
-      if (!buttonToClick) {
-        log('⚠️ No button found - checking if done...', 'warn');
-
-        // Check if we successfully submitted
+        // Wait for submission confirmation
+        await sleep(3000);
         if (this.checkSubmissionSuccess()) {
-          log('✅ Application submitted successfully!', 'success');
+          log('✅ APPLICATION SUBMITTED SUCCESSFULLY!', 'success');
           return true;
         }
 
-        // Try one more time to fill any missed required fields
+        // Wait a bit more for slow confirmations
+        await sleep(2000);
+        if (this.checkSubmissionSuccess()) {
+          log('✅ APPLICATION SUBMITTED SUCCESSFULLY (delayed)!', 'success');
+          return true;
+        }
+
+        clicked = true;
+      }
+
+      // Priority 2: Review (from step 3 to step 4: 67% → 100%)
+      if (!clicked) {
+        const reviewButton = this.findButton(['Review', 'Review your application']);
+        if (reviewButton) {
+          log('✅ Found REVIEW button (Step 3 → Step 4: 67% → 100%)', 'success');
+          this.addActivityLog('📋 Reviewing application...');
+          await clickElement(reviewButton, 1000);
+          clicked = true;
+        }
+      }
+
+      // Priority 3: Next/Continue (from step 1 → 2 or step 2 → 3)
+      if (!clicked) {
+        const nextButton = this.findButton(['Next', 'Continue']);
+        if (nextButton) {
+          log('✅ Found NEXT button (proceeding to next step)', 'success');
+          this.addActivityLog('➡️ Going to next step...');
+          await clickElement(nextButton, 1000);
+          clicked = true;
+        }
+      }
+
+      // If no button found, check if we need to fill more fields
+      if (!clicked) {
+        log('⚠️ No button found - checking for unfilled fields...', 'warn');
+
         const requiredFields = this.findUnfilledRequiredFields();
         if (requiredFields.length > 0) {
-          log(`📝 Found ${requiredFields.length} unfilled required fields, filling them...`, 'info');
+          log(`📝 Found ${requiredFields.length} unfilled required fields - filling them...`, 'info');
           for (const field of requiredFields) {
             await this.fillFieldIntelligent(field);
-            await sleep(200);
+            await sleep(300);
           }
           await sleep(500);
           continue; // Try again after filling fields
         }
 
-        // No fields to fill and no button - application failed
-        log('❌ No button found and no fields to fill - application may have failed', 'error');
+        // Check one more time if submitted
+        if (this.checkSubmissionSuccess()) {
+          log('✅ APPLICATION SUBMITTED SUCCESSFULLY!', 'success');
+          return true;
+        }
+
+        // No button and no fields - stuck
+        log('❌ No button found and no fields to fill - application stuck or failed', 'error');
         return false;
       }
 
-      // Click the button
-      log(`✅ Found ${buttonType} button - clicking...`, 'success');
-      this.addActivityLog(`Clicking ${buttonType} button...`);
-      await clickElement(buttonToClick, 1000);
-
-      // If we clicked Submit, wait and check for success
-      if (buttonType === 'SUBMIT') {
-        log('⏳ Waiting for submission confirmation...', 'info');
-        await sleep(2000);
-
-        if (this.checkSubmissionSuccess()) {
-          log('✅ Application submitted successfully!', 'success');
-          return true;
-        } else {
-          log('⚠️ Submit clicked but no confirmation - waiting longer...', 'warn');
-          await sleep(2000);
-          if (this.checkSubmissionSuccess()) {
-            log('✅ Application submitted successfully (after delay)!', 'success');
-            return true;
-          }
-        }
-      }
-
       // Wait before next iteration
-      await sleep(800);
+      await sleep(1000);
     }
 
-    // If we get here, we exceeded max steps without submitting
-    log('❌ Exceeded maximum steps without successful submission', 'error');
+    // Exceeded max steps
+    log('❌ Exceeded maximum steps - application incomplete', 'error');
     return false;
   }
 
