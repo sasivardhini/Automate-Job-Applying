@@ -69,11 +69,20 @@ class LinkedInEasyApplyBot {
       return true;
     });
 
-    // Auto-start if enabled
+    // Auto-start if enabled (with proper page load wait)
     if (this.settings.autoApply) {
-      log('Auto-apply is enabled, starting automation...', 'info');
-      await sleep(2000);
-      this.startBatchProcessing();
+      log('Auto-apply is enabled, waiting for page to fully load...', 'info');
+      // Wait longer for page to fully load and render
+      await sleep(5000);
+
+      // Check if we're on a jobs page before starting
+      if (this.isOnJobsPage()) {
+        log('On jobs page, starting automation...', 'info');
+        this.startBatchProcessing();
+      } else {
+        log('Not on jobs page yet, waiting for navigation...', 'warn');
+        this.addActivityLog('⚠️ Please click "Search & Apply" to start', 'warn');
+      }
     }
   }
 
@@ -576,7 +585,7 @@ class LinkedInEasyApplyBot {
     log(`📊 Rate limits - Hourly: ${rateLimits.hourly.remaining} remaining | Daily: ${rateLimits.daily.remaining} remaining`, 'info');
 
     // STRATEGY: Find job cards first, then look for Easy Apply button
-    const jobCards = this.findJobCards();
+    const jobCards = await this.findJobCards();
 
     if (jobCards.length === 0) {
       log('❌ No job cards found, checking for single job page...', 'warn');
@@ -701,7 +710,7 @@ class LinkedInEasyApplyBot {
   /**
    * Find job cards on the page - COMPREHENSIVE VERSION
    */
-  findJobCards() {
+  async findJobCards() {
     log('🔍 DEBUG: Searching for job cards with multiple selectors...', 'info');
 
     // Try many different selectors for LinkedIn's various layouts
@@ -730,23 +739,34 @@ class LinkedInEasyApplyBot {
       'li[data-job-id]'
     ];
 
-    for (const selector of jobListSelectors) {
-      try {
-        const cards = document.querySelectorAll(selector);
-        if (cards.length > 0) {
-          log(`✅ Found ${cards.length} job cards using selector: "${selector}"`, 'success');
-          this.addActivityLog(`Found ${cards.length} job cards`, 'success');
-          return Array.from(cards);
-        } else {
-          log(`  ⚠️  No cards with selector: "${selector}"`, 'info');
+    // Retry up to 3 times with delays (page might still be loading)
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      log(`Attempt ${attempt}/3 to find job cards...`, 'info');
+
+      for (const selector of jobListSelectors) {
+        try {
+          const cards = document.querySelectorAll(selector);
+          if (cards.length > 0) {
+            log(`✅ Found ${cards.length} job cards using selector: "${selector}"`, 'success');
+            this.addActivityLog(`Found ${cards.length} job cards`, 'success');
+            return Array.from(cards);
+          } else {
+            log(`  ⚠️  No cards with selector: "${selector}"`, 'info');
+          }
+        } catch (e) {
+          log(`  ❌ Error with selector "${selector}": ${e.message}`, 'warn');
         }
-      } catch (e) {
-        log(`  ❌ Error with selector "${selector}": ${e.message}`, 'warn');
+      }
+
+      // If not found yet, wait and retry
+      if (attempt < 3) {
+        log(`No jobs found on attempt ${attempt}, waiting 2s before retry...`, 'warn');
+        await sleep(2000);
       }
     }
 
     // FALLBACK: Check if we're on a single job page
-    log('⚠️  No job cards found, checking if this is a single job page...', 'warn');
+    log('⚠️  No job cards found after retries, checking if this is a single job page...', 'warn');
     const singleJobPage = document.querySelector('.jobs-details, .jobs-unified-top-card');
     if (singleJobPage) {
       log('ℹ️  This appears to be a single job page, not a search results page', 'info');
@@ -754,8 +774,17 @@ class LinkedInEasyApplyBot {
       return []; // Will trigger single job mode
     }
 
-    log('❌ Could not find any job cards on this page', 'error');
-    this.addActivityLog('No jobs found - wrong page?', 'error');
+    // Check if we're on the right page
+    if (!this.isOnJobsPage()) {
+      log('❌ Not on a jobs page - please navigate to LinkedIn Jobs', 'error');
+      this.addActivityLog('❌ Not on jobs page - Click "Search & Apply"', 'error');
+      showNotification('Please click "Search & Apply" button to start', 'error');
+    } else {
+      log('❌ Could not find any job cards on this page', 'error');
+      this.addActivityLog('No jobs found - try scrolling or adjusting filters', 'error');
+      showNotification('No jobs found - try scrolling down or adjusting filters', 'warn');
+    }
+
     return [];
   }
 
@@ -2931,6 +2960,17 @@ class LinkedInEasyApplyBot {
     } else {
       log(`  ⏭️  Optional file upload - skipping`, 'info');
     }
+  }
+
+  /**
+   * Check if we're on a LinkedIn jobs page
+   */
+  isOnJobsPage() {
+    const url = window.location.href;
+    const hasJobsInUrl = url.includes('linkedin.com/jobs');
+    const hasJobElements = document.querySelector('.jobs-search-results, .scaffold-layout__list, .job-card-container, .jobs-details');
+
+    return hasJobsInUrl || hasJobElements !== null;
   }
 
   /**
