@@ -1712,6 +1712,15 @@ class LinkedInEasyApplyBot {
   findButtonAdvanced(textOptions) {
     log(`🔍 Searching for buttons: ${textOptions.join(', ')}`, 'info');
 
+    // Whitelist of important action buttons that should NEVER be avoided
+    const whitelistButtons = [
+      'review',
+      'submit',
+      'next',
+      'continue',
+      'apply'
+    ];
+
     // ULTRA STRICT avoid list - expanded with more variations
     const avoidWords = [
       'preferences',
@@ -1824,11 +1833,18 @@ class LinkedInEasyApplyBot {
 
       log(`  Checking button: "${buttonText}" | aria-label="${buttonLabel}"`, 'info');
 
-      // ULTRA STRICT: Skip if button contains ANY avoid words
-      const avoidedWord = avoidWords.find(word => combinedText.includes(word));
-      if (avoidedWord) {
-        log(`    ❌ SKIPPING - Contains avoided word "${avoidedWord}": "${buttonText}"`, 'warn');
-        continue;
+      // Check if button is whitelisted (important action buttons)
+      const isWhitelisted = whitelistButtons.some(wl => combinedText.includes(wl));
+
+      // ULTRA STRICT: Skip if button contains ANY avoid words (unless whitelisted)
+      if (!isWhitelisted) {
+        const avoidedWord = avoidWords.find(word => combinedText.includes(word));
+        if (avoidedWord) {
+          log(`    ❌ SKIPPING - Contains avoided word "${avoidedWord}": "${buttonText}"`, 'warn');
+          continue;
+        }
+      } else {
+        log(`    ✅ Whitelisted button found: "${buttonText}"`, 'success');
       }
 
       // Skip disabled buttons
