@@ -1133,13 +1133,20 @@ class LinkedInEasyApplyBot {
       let clicked = false;
 
       // Priority 1: Submit application (final step at 100%)
+      log('🔍 [PRIORITY 1] Searching for SUBMIT button...', 'info');
       const submitButton = this.findButton(['Submit application', 'Submit']);
       if (submitButton) {
-        log('✅ Found SUBMIT button (Step 4 - 100%) - Final step!', 'success');
+        log('✅ [PRIORITY 1] Found SUBMIT button (Step 4 - 100%) - Final step!', 'success');
+        log(`   Button text: "${submitButton.textContent.trim()}"`, 'info');
+        log(`   Button HTML: ${submitButton.outerHTML.substring(0, 150)}`, 'info');
         this.addActivityLog('📤 Submitting application...');
+
+        log('🖱️  Clicking SUBMIT button...', 'info');
         await clickElement(submitButton, 1500);
+        log('✅ SUBMIT button clicked successfully', 'success');
 
         // Wait for submission confirmation
+        log('⏳ Waiting 3s for submission confirmation...', 'info');
         await sleep(3000);
         if (this.checkSubmissionSuccess()) {
           log('✅ APPLICATION SUBMITTED SUCCESSFULLY!', 'success');
@@ -1147,6 +1154,7 @@ class LinkedInEasyApplyBot {
         }
 
         // Wait a bit more for slow confirmations
+        log('⏳ Waiting 2s more for delayed confirmation...', 'info');
         await sleep(2000);
         if (this.checkSubmissionSuccess()) {
           log('✅ APPLICATION SUBMITTED SUCCESSFULLY (delayed)!', 'success');
@@ -1154,27 +1162,45 @@ class LinkedInEasyApplyBot {
         }
 
         clicked = true;
+      } else {
+        log('ℹ️  [PRIORITY 1] No SUBMIT button found (expected if not on final step)', 'info');
       }
 
       // Priority 2: Review (from step 3 to step 4: 67% → 100%)
       if (!clicked) {
+        log('🔍 [PRIORITY 2] Searching for REVIEW button...', 'info');
         const reviewButton = this.findButton(['Review', 'Review your application']);
         if (reviewButton) {
-          log('✅ Found REVIEW button (Step 3 → Step 4: 67% → 100%)', 'success');
+          log('✅ [PRIORITY 2] Found REVIEW button (Step 3 → Step 4: 67% → 100%)', 'success');
+          log(`   Button text: "${reviewButton.textContent.trim()}"`, 'info');
+          log(`   Button HTML: ${reviewButton.outerHTML.substring(0, 150)}`, 'info');
           this.addActivityLog('📋 Reviewing application...');
+
+          log('🖱️  Clicking REVIEW button...', 'info');
           await clickElement(reviewButton, 1000);
+          log('✅ REVIEW button clicked successfully', 'success');
           clicked = true;
+        } else {
+          log('ℹ️  [PRIORITY 2] No REVIEW button found', 'info');
         }
       }
 
       // Priority 3: Next/Continue (from step 1 → 2 or step 2 → 3)
       if (!clicked) {
+        log('🔍 [PRIORITY 3] Searching for NEXT/CONTINUE button...', 'info');
         const nextButton = this.findButton(['Next', 'Continue']);
         if (nextButton) {
-          log('✅ Found NEXT button (proceeding to next step)', 'success');
+          log('✅ [PRIORITY 3] Found NEXT button (proceeding to next step)', 'success');
+          log(`   Button text: "${nextButton.textContent.trim()}"`, 'info');
+          log(`   Button HTML: ${nextButton.outerHTML.substring(0, 150)}`, 'info');
           this.addActivityLog('➡️ Going to next step...');
+
+          log('🖱️  Clicking NEXT button...', 'info');
           await clickElement(nextButton, 1000);
+          log('✅ NEXT button clicked successfully', 'success');
           clicked = true;
+        } else {
+          log('ℹ️  [PRIORITY 3] No NEXT/CONTINUE button found', 'info');
         }
       }
 
@@ -2650,26 +2676,34 @@ class LinkedInEasyApplyBot {
     }
 
     // STEP 1: Click the dropdown to expand it
-    log(`  Clicking dropdown to expand...`, 'info');
+    log(`  ━━━ STEP 1: OPENING DROPDOWN ━━━`, 'info');
+    log(`  Dropdown HTML: ${dropdown.outerHTML.substring(0, 200)}...`, 'info');
 
     // Scroll dropdown into view first
+    log(`  📜 Scrolling dropdown into view...`, 'info');
     dropdown.scrollIntoView({ behavior: 'smooth', block: 'center' });
     await sleep(500);
+    log(`  ✅ Scrolled into view, waiting 500ms`, 'info');
 
     // AGGRESSIVE: Try multiple clicking methods to ensure dropdown opens
     // Method 1: Direct click
+    log(`  🖱️  METHOD 1: Trying direct click()...`, 'info');
     try {
       dropdown.click();
+      log(`  ✅ METHOD 1: Direct click successful`, 'success');
       await sleep(200);
     } catch (e) {
-      log(`  Click method 1 failed: ${e.message}`, 'warn');
+      log(`  ❌ METHOD 1 failed: ${e.message}`, 'warn');
     }
 
     // Method 2: Find and click any child button/clickable element
     const clickableChild = dropdown.querySelector('button, [role="button"], input');
     if (clickableChild) {
+      log(`  🖱️  METHOD 2: Found clickable child, trying to click it...`, 'info');
+      log(`     Child element: ${clickableChild.tagName} - ${clickableChild.outerHTML.substring(0, 100)}`, 'info');
       try {
         clickableChild.click();
+        log(`  ✅ METHOD 2: Child click successful`, 'success');
         await sleep(200);
       } catch (e) {
         log(`  Click method 2 failed: ${e.message}`, 'warn');
@@ -2677,28 +2711,34 @@ class LinkedInEasyApplyBot {
     }
 
     // Method 3: Mouse events
+    log(`  🖱️  METHOD 3: Trying mouse events (mousedown/up/click)...`, 'info');
     try {
       dropdown.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
       dropdown.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
       dropdown.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      log(`  ✅ METHOD 3: Mouse events dispatched successfully`, 'success');
       await sleep(200);
     } catch (e) {
-      log(`  Click method 3 failed: ${e.message}`, 'warn');
+      log(`  ❌ METHOD 3 failed: ${e.message}`, 'warn');
     }
 
     // Method 4: Focus and keyboard (Arrow Down to open dropdown)
+    log(`  ⌨️  METHOD 4: Trying keyboard navigation (ArrowDown)...`, 'info');
     try {
       dropdown.focus();
       await sleep(100);
       dropdown.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', code: 'ArrowDown', bubbles: true }));
       dropdown.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowDown', code: 'ArrowDown', bubbles: true }));
+      log(`  ✅ METHOD 4: Keyboard events dispatched successfully`, 'success');
       await sleep(300);
     } catch (e) {
-      log(`  Keyboard method failed: ${e.message}`, 'warn');
+      log(`  ❌ METHOD 4 failed: ${e.message}`, 'warn');
     }
 
     // Wait LONGER for dropdown to fully expand
+    log(`  ⏳ Waiting 800ms for dropdown to fully expand...`, 'info');
     await sleep(800);
+    log(`  ✅ Wait complete, proceeding to find options list...`, 'info');
 
     // STEP 2: Find the options list
     // LinkedIn typically shows options in a listbox with role="listbox"
@@ -2790,6 +2830,7 @@ class LinkedInEasyApplyBot {
     }
 
     // STEP 3: Find all option elements
+    log(`  ━━━ STEP 3: FINDING OPTION ELEMENTS ━━━`, 'info');
     const optionSelectors = [
       '[role="option"]',
       'li',
@@ -2804,13 +2845,16 @@ class LinkedInEasyApplyBot {
       const elements = optionsList.querySelectorAll(selector);
       if (elements.length > 0) {
         optionElements = Array.from(elements);
-        log(`  Found ${optionElements.length} option elements using: ${selector}`, 'info');
+        log(`  ✅ Found ${optionElements.length} option elements using selector: "${selector}"`, 'success');
         break;
+      } else {
+        log(`  ⏭️  No options found with selector: "${selector}"`, 'info');
       }
     }
 
     if (optionElements.length === 0) {
-      log(`  ❌ No option elements found in list!`, 'error');
+      log(`  ❌ STEP 3 FAILED: No option elements found in list!`, 'error');
+      log(`  ℹ️  Options list HTML: ${optionsList.outerHTML.substring(0, 300)}...`, 'info');
       try {
         dropdown.click(); // Close dropdown
       } catch (e) {
@@ -2820,14 +2864,17 @@ class LinkedInEasyApplyBot {
     }
 
     // Log all options for debugging
+    log(`  📋 All available options (${optionElements.length} total):`, 'info');
     optionElements.forEach((opt, idx) => {
       const text = (opt.textContent || opt.innerText || '').trim();
-      log(`    Option ${idx}: "${text}"`, 'info');
+      log(`     [${idx}] "${text}"`, 'info');
     });
 
     // STEP 4: Try to find matching option
+    log(`  ━━━ STEP 4: SEARCHING FOR MATCHING OPTION ━━━`, 'info');
     if (targetValue) {
       const targetLower = targetValue.toLowerCase().trim();
+      log(`  🎯 Looking for option matching: "${targetValue}"`, 'info');
 
       for (const option of optionElements) {
         const optionText = (option.textContent || option.innerText || '').trim();
@@ -2838,6 +2885,7 @@ class LinkedInEasyApplyBot {
             optionLower.includes('select an option') ||
             optionLower.includes('choose') ||
             optionText === '--') {
+          log(`     ⏭️  Skipping placeholder: "${optionText}"`, 'info');
           continue;
         }
 
@@ -2845,30 +2893,40 @@ class LinkedInEasyApplyBot {
         if (optionLower === targetLower ||
             optionLower.includes(targetLower) ||
             targetLower.includes(optionLower)) {
-          log(`  ✅ Found matching option: "${optionText}"`, 'success');
+          log(`  ✅ MATCH FOUND: "${optionText}" matches target "${targetValue}"`, 'success');
 
           // Scroll option into view
+          log(`     📜 Scrolling option into view...`, 'info');
           option.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
           await sleep(150);
 
           // Click the option with multiple methods for reliability
+          log(`     🖱️  Clicking option...`, 'info');
           try {
             option.click();
+            log(`     ✅ Option clicked successfully`, 'success');
           } catch (e) {
+            log(`     ⚠️  Direct click failed, trying mouse event...`, 'warn');
             // Fallback: dispatch mouse event
             option.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+            log(`     ✅ Mouse event dispatched`, 'success');
           }
           await sleep(300);  // Wait longer to ensure selection is registered
 
-          log(`  ✅ Clicked matching option successfully`, 'success');
+          log(`  ✅ STEP 4 COMPLETE: Clicked matching option successfully`, 'success');
           return;
+        } else {
+          log(`     ❌ "${optionText}" does NOT match "${targetValue}"`, 'info');
         }
       }
 
-      log(`  ⚠️ No match found for "${targetValue}", using fallback...`, 'warn');
+      log(`  ⚠️ STEP 4: No exact match found for "${targetValue}", proceeding to fallback...`, 'warn');
+    } else {
+      log(`  ℹ️  No target value specified, using fallback selection...`, 'info');
     }
 
     // STEP 5: AGGRESSIVE FALLBACK - Select first non-placeholder option
+    log(`  ━━━ STEP 5: FALLBACK - SELECTING FIRST VALID OPTION ━━━`, 'info');
     for (const option of optionElements) {
       const optionText = (option.textContent || option.innerText || '').trim();
       const optionLower = optionText.toLowerCase();
@@ -2880,29 +2938,36 @@ class LinkedInEasyApplyBot {
           optionLower.includes('choose') ||
           optionText === '--' ||
           optionText.length === 0) {
-        log(`    Skipping placeholder: "${optionText}"`, 'info');
+        log(`     ⏭️  Skipping placeholder: "${optionText}"`, 'info');
         continue;
       }
 
       // Select this option!
-      log(`  ✅ FALLBACK: Selecting first valid option: "${optionText}"`, 'success');
+      log(`  ✅ FALLBACK: Found first valid option: "${optionText}"`, 'success');
 
       // Scroll option into view
+      log(`     📜 Scrolling option into view...`, 'info');
       option.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       await sleep(150);
 
       // Click the option with multiple methods for reliability
+      log(`     🖱️  Clicking option...`, 'info');
       try {
         option.click();
+        log(`     ✅ Option clicked successfully`, 'success');
       } catch (e) {
+        log(`     ⚠️  Direct click failed, trying mouse event...`, 'warn');
         // Fallback: dispatch mouse event
         option.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        log(`     ✅ Mouse event dispatched`, 'success');
       }
       await sleep(300);  // Wait longer to ensure selection is registered
 
-      log(`  ✅ Clicked fallback option successfully`, 'success');
+      log(`  ✅ STEP 5 COMPLETE: Clicked fallback option successfully`, 'success');
       return;
     }
+
+    log(`  ❌ STEP 5 FAILED: No valid options found (all were placeholders)`, 'error');
 
     // STEP 6: ULTRA-AGGRESSIVE FALLBACK - Select ANY option (even if looks like placeholder)
     if (optionElements.length > 1) {
