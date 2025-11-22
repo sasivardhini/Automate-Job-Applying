@@ -1560,6 +1560,15 @@ class LinkedInEasyApplyBot {
   findSafeActionButton() {
     log('🔍 Looking for safe action button...', 'info');
 
+    // Whitelist of important action buttons that should NEVER be avoided
+    const whitelistButtons = [
+      'review',
+      'submit',
+      'next',
+      'continue',
+      'apply'
+    ];
+
     // ULTRA STRICT avoid list - same as findButtonAdvanced
     const avoidTexts = [
       'save',
@@ -1651,10 +1660,17 @@ class LinkedInEasyApplyBot {
 
       log(`  Checking button: "${buttonText}"`, 'info');
 
-      // STRICT: Skip buttons we want to avoid
-      if (avoidTexts.some(avoid => combinedText.includes(avoid))) {
-        log(`    ❌ SKIPPING unsafe button: "${buttonText}"`, 'warn');
-        continue;
+      // Check if button is whitelisted (important action buttons)
+      const isWhitelisted = whitelistButtons.some(wl => combinedText.includes(wl));
+
+      // STRICT: Skip buttons we want to avoid (unless whitelisted)
+      if (!isWhitelisted) {
+        if (avoidTexts.some(avoid => combinedText.includes(avoid))) {
+          log(`    ❌ SKIPPING unsafe button: "${buttonText}"`, 'warn');
+          continue;
+        }
+      } else {
+        log(`    ✅ Whitelisted button found: "${buttonText}"`, 'success');
       }
 
       // Only click visible buttons
@@ -1676,8 +1692,14 @@ class LinkedInEasyApplyBot {
       const buttonLabel = (button.getAttribute('aria-label') || '').toLowerCase().trim();
       const combinedText = `${buttonText} ${buttonLabel}`;
 
-      if (avoidTexts.some(avoid => combinedText.includes(avoid))) {
-        continue;
+      // Check if button is whitelisted (important action buttons)
+      const isWhitelisted = whitelistButtons.some(wl => combinedText.includes(wl));
+
+      // STRICT: Skip buttons we want to avoid (unless whitelisted)
+      if (!isWhitelisted) {
+        if (avoidTexts.some(avoid => combinedText.includes(avoid))) {
+          continue;
+        }
       }
 
       const style = window.getComputedStyle(button);
