@@ -3095,44 +3095,83 @@ class LinkedInEasyApplyBot {
     const lowerLabel = label.toLowerCase();
     const isRequired = fileInput.required || fileInput.hasAttribute('required') || fileInput.getAttribute('aria-required') === 'true';
 
-    log(`📎 Found file upload field: "${label}" (required: ${isRequired})`, 'info');
+    log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`, 'info');
+    log(`📎 RESUME UPLOAD: Found file upload field: "${label}" (required: ${isRequired})`, 'info');
+    log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`, 'info');
 
     // Check if this is a resume or cover letter upload
     const isResume = lowerLabel.includes('resume') || lowerLabel.includes('cv');
     const isCoverLetter = lowerLabel.includes('cover letter');
 
-    // CRITICAL: Check if resume is already uploaded in LinkedIn profile
+    // CRITICAL: Check if resume is already uploaded/selected in LinkedIn
     // LinkedIn shows uploaded resume from profile - look for document name or "Uploaded" text
     const container = fileInput.closest('div[class*="jobs-document"]') ||
                      fileInput.closest('div[class*="document"]') ||
+                     fileInput.closest('fieldset') ||
                      fileInput.closest('section') ||
                      fileInput.closest('div');
 
     if (container) {
       const containerText = container.textContent || '';
+      log(`  Container text: "${containerText.substring(0, 200)}..."`, 'info');
 
-      // Check for already uploaded resume indicators
+      // Check for already uploaded/selected resume indicators
       if (containerText.includes('.pdf') ||
           containerText.includes('.doc') ||
           containerText.includes('.docx') ||
           containerText.includes('Uploaded') ||
           containerText.includes('uploaded') ||
           containerText.includes('attached') ||
+          containerText.includes('Resume.pdf') ||
+          containerText.includes('CV.pdf') ||
           containerText.match(/\d+\s*(KB|MB|bytes)/i)) { // File size indicator
 
         log(`  ✅ Resume/file already uploaded from LinkedIn profile!`, 'success');
+        log(`  ⏩ Skipping resume upload - file already selected`, 'success');
         this.addActivityLog(`✅ Resume detected - already uploaded`, 'success');
         return;
       }
 
-      // Check if there's a "Use resume from profile" or similar button
-      const useProfileBtn = container.querySelector('button[aria-label*="resume"], button[aria-label*="Resume"]');
-      if (useProfileBtn) {
-        log(`  🔄 Clicking "Use resume from profile" button...`, 'info');
-        useProfileBtn.click();
-        await sleep(500);
-        this.addActivityLog(`✅ Using resume from profile`, 'success');
+      // Also check for radio buttons that might be pre-selected (LinkedIn sometimes uses radios for resume selection)
+      const selectedRadio = container.querySelector('input[type="radio"]:checked');
+      if (selectedRadio && isResume) {
+        log(`  ✅ Resume already selected via radio button!`, 'success');
+        log(`  ⏩ Skipping resume selection - already chosen`, 'success');
+        this.addActivityLog(`✅ Resume already selected`, 'success');
         return;
+      }
+
+      // Check if there's a "Use resume from profile" or similar button
+      // CRITICAL: Avoid clicking "Show more" or "See fewer" buttons!
+      const buttons = container.querySelectorAll('button');
+      for (const btn of buttons) {
+        const btnText = (btn.textContent || '').toLowerCase().trim();
+        const btnLabel = (btn.getAttribute('aria-label') || '').toLowerCase().trim();
+        const combinedText = `${btnText} ${btnLabel}`;
+
+        // SKIP expand/collapse buttons
+        if (combinedText.includes('show more') ||
+            combinedText.includes('show 3 more') ||
+            combinedText.includes('see more') ||
+            combinedText.includes('see fewer') ||
+            combinedText.includes('see less') ||
+            combinedText.includes('expand') ||
+            combinedText.includes('collapse')) {
+          log(`  ⏭️  Skipping expand/collapse button: "${btnText}"`, 'info');
+          continue;
+        }
+
+        // ONLY click if it's specifically a "use resume" or "select resume" button
+        if (combinedText.includes('use resume') ||
+            combinedText.includes('select resume') ||
+            combinedText.includes('choose resume') ||
+            combinedText.includes('upload from profile')) {
+          log(`  🔄 Clicking "Use resume from profile" button: "${btnText}"`, 'info');
+          btn.click();
+          await sleep(500);
+          this.addActivityLog(`✅ Using resume from profile`, 'success');
+          return;
+        }
       }
     }
 
