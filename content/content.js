@@ -3182,8 +3182,18 @@ class LinkedInEasyApplyBot {
     }
 
     const buttons = modal.querySelectorAll('button');
-    log(`Searching ${buttons.length} buttons in modal for: ${textOptions.join(', ')}`, 'info');
+    log(`🔍 Searching ${buttons.length} buttons in modal for: ${textOptions.join(', ')}`, 'info');
 
+    // DEBUG: Log all buttons for troubleshooting
+    const buttonTexts = Array.from(buttons).map(btn => {
+      const text = (btn.textContent || '').trim();
+      const disabled = btn.disabled ? '(DISABLED)' : '';
+      return `"${text}" ${disabled}`;
+    });
+    log(`  Available buttons: ${buttonTexts.join(', ')}`, 'info');
+
+    // CRITICAL: Whitelist of important action buttons that should NEVER be avoided
+    const whitelistButtons = ['review', 'submit', 'next', 'continue', 'apply'];
     const avoidWords = ['back', 'save', 'cancel', 'dismiss', 'discard'];
 
     for (const button of buttons) {
@@ -3193,22 +3203,41 @@ class LinkedInEasyApplyBot {
       const buttonLabel = (button.getAttribute('aria-label') || '').toLowerCase().trim();
       const combinedText = `${buttonText} ${buttonLabel}`;
 
-      // Skip buttons we want to avoid (like Back)
+      // Check if this button matches what we're looking for
+      let isMatch = false;
+      for (const text of textOptions) {
+        if (combinedText.includes(text.toLowerCase())) {
+          isMatch = true;
+          break;
+        }
+      }
+
+      if (!isMatch) continue; // Not the button we're looking for
+
+      // Check if button is whitelisted (critical action button)
+      const isWhitelisted = whitelistButtons.some(wl => combinedText.includes(wl));
+
+      if (isWhitelisted) {
+        // WHITELIST: This is a critical button (Review, Submit, Next, etc.) - NEVER skip it!
+        log(`  ✅ WHITELISTED button found: "${buttonText}" - PRIORITY MATCH!`, 'success');
+        const style = window.getComputedStyle(button);
+        if (style.display !== 'none' && style.visibility !== 'hidden') {
+          return button;
+        }
+      }
+
+      // For non-whitelisted buttons, check avoid words
       const hasAvoidWord = avoidWords.some(word => combinedText.includes(word));
       if (hasAvoidWord) {
-        log(`  Skipping button with avoid word: "${buttonText}"`, 'info');
+        log(`  ⏭️ Skipping button with avoid word: "${buttonText}"`, 'info');
         continue;
       }
 
-      // Check if this button matches what we're looking for
-      for (const text of textOptions) {
-        if (combinedText.includes(text.toLowerCase())) {
-          const style = window.getComputedStyle(button);
-          if (style.display !== 'none' && style.visibility !== 'hidden') {
-            log(`  ✅ Found button: "${buttonText}"`, 'success');
-            return button;
-          }
-        }
+      // Button matches and is not avoided - return it
+      const style = window.getComputedStyle(button);
+      if (style.display !== 'none' && style.visibility !== 'hidden') {
+        log(`  ✅ Found button: "${buttonText}"`, 'success');
+        return button;
       }
     }
 
