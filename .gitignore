@@ -23,6 +23,7 @@ build/
 *.tmp
 *.temp
 .cache/
+*.backup
 
 # OS files
 Thumbs.db
