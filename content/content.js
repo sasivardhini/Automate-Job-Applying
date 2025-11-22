@@ -1668,35 +1668,38 @@ class LinkedInEasyApplyBot {
    * Check if submission was successful
    */
   checkSubmissionSuccess() {
-    const successIndicators = [
-      'Application sent',
-      'Application submitted',
-      'Your application was sent',
-      'successfully applied',
-      'Application complete',
-      'Applied',  // Matches "Applied 8 seconds ago"
-      'Application was sent',
-      'application sent to'
-    ];
-
     const pageText = document.body.textContent;
+    const lowerPageText = pageText.toLowerCase();
 
-    // Check for "Applied X seconds/minutes ago" pattern
+    // Pattern 1: "Applied X time ago" (MOST COMMON)
     if (/Applied\s+\d+\s+(second|minute|hour|day)s?\s+ago/i.test(pageText)) {
-      log('✅ Detected success: "Applied X time ago" pattern', 'success');
+      log('✅ SUCCESS: "Applied X time ago" pattern detected!', 'success');
       return true;
     }
 
-    // Check standard success indicators
-    const found = successIndicators.some(indicator =>
-      pageText.toLowerCase().includes(indicator.toLowerCase())
-    );
-
-    if (found) {
-      log('✅ Detected success via indicator text', 'success');
+    // Pattern 2: "Your application was sent to [Company]"
+    if (lowerPageText.includes('your application was sent') ||
+        lowerPageText.includes('application was sent to')) {
+      log('✅ SUCCESS: "Application was sent" detected!', 'success');
+      return true;
     }
 
-    return found;
+    // Pattern 3: Other success indicators
+    const successIndicators = [
+      'application sent',
+      'application submitted',
+      'successfully applied',
+      'application complete'
+    ];
+
+    for (const indicator of successIndicators) {
+      if (lowerPageText.includes(indicator)) {
+        log(`✅ SUCCESS: "${indicator}" detected!`, 'success');
+        return true;
+      }
+    }
+
+    return false;
   }
 
   /**
