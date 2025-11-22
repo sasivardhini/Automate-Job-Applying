@@ -1076,188 +1076,129 @@ class LinkedInEasyApplyBot {
   }
 
   /**
-   * Process application form through all steps - ADVANCED VERSION
+   * Process application form through all steps - SIMPLE & CLEAN VERSION
    */
   async processApplicationForm() {
-    let currentStep = 0;
-    const maxSteps = 15;
-    let lastFormState = '';
-    let stuckCounter = 0; // Track how many times we're stuck
-    const maxStuckAttempts = 7; // INCREASED: Skip job after 7 stuck attempts (was 3)
+    const maxSteps = 20;
+    log('🚀 Starting simple form processing...', 'info');
 
-    log('Starting advanced form processing...', 'info');
+    for (let step = 0; step < maxSteps; step++) {
+      log(`\n📝 === STEP ${step + 1}/${maxSteps} ===`, 'info');
 
-    while (currentStep < maxSteps) {
-      await sleep(randomDelay(300, 500)); // SPEED BOOST: Reduced from 500-800
-
-      // CRITICAL: Check if user clicked STOP
+      // Check if user stopped
       if (!this.settings.autoApply || !this.isRunning || !this.applicationInProgress) {
-        log('🛑 STOP detected - exiting form processing', 'warn');
-        this.addActivityLog('🛑 Stopped by user during form fill', 'error');
+        log('🛑 User stopped - exiting', 'warn');
         await this.closeModal();
         return false;
       }
 
-      // CRITICAL: Check if session expired
+      // Check if session expired
       if (await this.detectSessionExpired()) {
         throw new Error('Session expired');
       }
 
-      // IMPORTANT: Check for "Save application" dialog and handle it
+      // Handle any dialogs
       await this.handleSaveApplicationDialog();
 
-      // Get current form state
-      const currentFormState = this.getFormState();
+      // Wait for page to be ready
+      await sleep(800);
 
-      // Check if we're stuck in a loop
-      if (currentFormState === lastFormState && currentStep > 0) {
-        stuckCounter++;
-        log(`⚠️ Form state unchanged (stuck ${stuckCounter}/${maxStuckAttempts})`, 'warn');
-
-        // If stuck too many times, skip this job
-        if (stuckCounter >= maxStuckAttempts) {
-          log('❌ STUCK TOO LONG - Giving up on this job!', 'error');
-          this.addActivityLog('⚠️ Skipped: Application stuck after multiple retries', 'error');
-          // DON'T call closeModal here - let the finally block handle it to avoid "Save application?" dialog
-          return false;
-        }
-
-        // AGGRESSIVE RETRY: Try to fill all required fields again
-        if (stuckCounter >= 3) {
-          log('⚠️ Attempting aggressive fill of all required fields...', 'warn');
-          const requiredFields = this.findUnfilledRequiredFields();
-          if (requiredFields.length > 0) {
-            log(`  Found ${requiredFields.length} unfilled required fields, filling aggressively...`, 'info');
-            for (const field of requiredFields) {
-              await this.fillFieldIntelligent(field);
-              await sleep(300); // Wait longer between fields
-            }
-            await sleep(500); // Wait for validation
-          }
-        }
-
-        // Try clicking any enabled primary button (but not preferences/save)
-        const anyButton = this.findSafeActionButton();
-        if (anyButton) {
-          log('Found safe action button, clicking...', 'info');
-          await clickElement(anyButton, 800);
-          currentStep++;
-          continue;
-        } else {
-          log('No action buttons found, waiting...', 'warn');
-          // Don't break immediately - let it retry
-        }
-      } else {
-        // Reset stuck counter if form state changed
-        stuckCounter = 0;
-      }
-
-      lastFormState = currentFormState;
-
-      // Fill all fields on current page
+      // STEP 1: Fill all fields on current page
+      log('1️⃣ Filling all fields on current page...', 'info');
       await this.fillCurrentForm();
+      await sleep(500);
 
-      // IMPORTANT: Scroll modal to reveal buttons at bottom (Review, Next, Submit)
-      await this.scrollModalToBottom();
+      // STEP 2: Find and click the next button
+      log('2️⃣ Looking for next button to click...', 'info');
 
-      // Wait for any validation or dynamic content
-      await sleep(200); // SPEED BOOST: Reduced from 500
+      // Check for submission success FIRST (in case we already submitted)
+      if (this.checkSubmissionSuccess()) {
+        log('✅ Application already submitted successfully!', 'success');
+        return true;
+      }
 
-      // CRITICAL: Check for form validation errors
-      const validationErrors = this.detectFormValidationErrors();
-      if (validationErrors.length > 0) {
-        log(`⚠️  Found ${validationErrors.length} validation errors, trying to fix...`, 'warn');
+      // Priority order: Submit > Review > Next/Continue
+      let buttonToClick = null;
+      let buttonType = '';
 
-        // Try to fill unfilled required fields
-        const requiredFields = this.findUnfilledRequiredFields();
-        if (requiredFields.length > 0) {
-          log(`  Attempting to fill ${requiredFields.length} required fields...`, 'info');
-          for (const field of requiredFields) {
-            await this.fillFieldIntelligent(field);
-            await sleep(randomDelay(100, 200)); // SPEED FIX: Reduced from 300-600
-          }
+      // Try Submit first
+      buttonToClick = this.findButton(['Submit application', 'Submit', 'submit']);
+      if (buttonToClick) {
+        buttonType = 'SUBMIT';
+      }
 
-          // Wait and check errors again
-          await sleep(200); // SPEED BOOST: Reduced from 500
-          const remainingErrors = this.detectFormValidationErrors();
-
-          if (remainingErrors.length > 0 && remainingErrors.length >= validationErrors.length) {
-            // Errors persist - might be unfixable
-            log(`  ⚠️  Still ${remainingErrors.length} errors after retry - continuing anyway`, 'warn');
-            this.addActivityLog(`⚠️ Form errors persisting`, 'warn');
-          } else if (remainingErrors.length === 0) {
-            log(`  ✅ All validation errors fixed!`, 'success');
-          }
+      // Try Review second
+      if (!buttonToClick) {
+        buttonToClick = this.findButton(['Review', 'Review your application', 'review']);
+        if (buttonToClick) {
+          buttonType = 'REVIEW';
         }
       }
 
-      // CRITICAL: Check buttons in correct order: Review → Next → Submit
-      // This ensures we don't try to submit before reviewing
-
-      // Look for Review button FIRST (appears before final submission)
-      const reviewButton = this.findButtonAdvanced(['Review', 'Review your application', 'review']);
-      if (reviewButton && !reviewButton.disabled && !reviewButton.getAttribute('aria-disabled')) {
-        log('Found REVIEW button, clicking...', 'info');
-        this.addActivityLog('📋 Clicking Review button...', 'info');
-        await clickElement(reviewButton, 800); // SPEED BOOST: Reduced from 2000
-        currentStep++;
-        continue;
+      // Try Next/Continue last
+      if (!buttonToClick) {
+        buttonToClick = this.findButton(['Next', 'Continue', 'next', 'continue']);
+        if (buttonToClick) {
+          buttonType = 'NEXT';
+        }
       }
 
-      // Look for Next/Continue button SECOND (multi-step forms)
-      const nextButton = this.findButtonAdvanced(['Next', 'Continue', 'next', 'continue']);
-      if (nextButton && !nextButton.disabled && !nextButton.getAttribute('aria-disabled')) {
-        log('Found NEXT button, moving to next step...', 'info');
-        this.addActivityLog('➡️ Clicking Next button...', 'info');
-        await clickElement(nextButton, 800); // SPEED BOOST: Reduced from 2000
-        currentStep++;
-        continue;
-      }
+      // If no button found, we might be done or stuck
+      if (!buttonToClick) {
+        log('⚠️ No button found - checking if done...', 'warn');
 
-      // Look for Submit button LAST (final step after review)
-      const submitButton = this.findButtonAdvanced(['Submit application', 'Submit', 'submit']);
-      if (submitButton && !submitButton.disabled) {
-        log('Found SUBMIT button - Submitting application!', 'success');
-        this.addActivityLog('📤 Submitting application...', 'success');
-        await clickElement(submitButton, 1500); // SPEED BOOST: Reduced from 3000
-
-        // Wait to confirm submission
-        await sleep(1500); // SPEED BOOST: Reduced from 3000
-
-        // Check for success confirmation
+        // Check if we successfully submitted
         if (this.checkSubmissionSuccess()) {
-          log('Application submitted successfully!', 'success');
+          log('✅ Application submitted successfully!', 'success');
           return true;
         }
-      }
 
-      // Check if there are required fields preventing progress
-      const requiredFields = this.findUnfilledRequiredFields();
-      if (requiredFields.length > 0) {
-        log(`Found ${requiredFields.length} unfilled required fields, attempting to fill...`, 'warn');
-        for (const field of requiredFields) {
-          await this.fillFieldIntelligent(field);
+        // Try one more time to fill any missed required fields
+        const requiredFields = this.findUnfilledRequiredFields();
+        if (requiredFields.length > 0) {
+          log(`📝 Found ${requiredFields.length} unfilled required fields, filling them...`, 'info');
+          for (const field of requiredFields) {
+            await this.fillFieldIntelligent(field);
+            await sleep(200);
+          }
+          await sleep(500);
+          continue; // Try again after filling fields
         }
-        await sleep(1000);
-        continue;
+
+        // No fields to fill and no button - application failed
+        log('❌ No button found and no fields to fill - application may have failed', 'error');
+        return false;
       }
 
-      // If we've processed but no buttons found, might be done
-      log('No more action buttons found, checking completion...', 'info');
+      // Click the button
+      log(`✅ Found ${buttonType} button - clicking...`, 'success');
+      this.addActivityLog(`Clicking ${buttonType} button...`);
+      await clickElement(buttonToClick, 1000);
 
-      // Final attempt - look for ANY clickable button that might advance
-      const fallbackButton = this.findFallbackActionButton();
-      if (fallbackButton) {
-        log('Found fallback button, attempting click...', 'info');
-        await clickElement(fallbackButton, 2000);
-        currentStep++;
-        continue;
+      // If we clicked Submit, wait and check for success
+      if (buttonType === 'SUBMIT') {
+        log('⏳ Waiting for submission confirmation...', 'info');
+        await sleep(2000);
+
+        if (this.checkSubmissionSuccess()) {
+          log('✅ Application submitted successfully!', 'success');
+          return true;
+        } else {
+          log('⚠️ Submit clicked but no confirmation - waiting longer...', 'warn');
+          await sleep(2000);
+          if (this.checkSubmissionSuccess()) {
+            log('✅ Application submitted successfully (after delay)!', 'success');
+            return true;
+          }
+        }
       }
 
-      break;
+      // Wait before next iteration
+      await sleep(800);
     }
 
-    log('Form processing completed or maxed out', 'warn');
+    // If we get here, we exceeded max steps without submitting
+    log('❌ Exceeded maximum steps without successful submission', 'error');
     return false;
   }
 
@@ -3076,16 +3017,45 @@ class LinkedInEasyApplyBot {
    * Find button by text content
    */
   findButton(textOptions) {
-    const buttons = document.querySelectorAll('button');
+    // Only search within the Easy Apply modal
+    const modal = document.querySelector('.jobs-easy-apply-modal, [data-test-modal], .artdeco-modal[role="dialog"]');
+    if (!modal) {
+      log('⚠️ No modal found when searching for button', 'warn');
+      return null;
+    }
+
+    const buttons = modal.querySelectorAll('button');
+    log(`Searching ${buttons.length} buttons in modal for: ${textOptions.join(', ')}`, 'info');
+
+    const avoidWords = ['back', 'save', 'cancel', 'dismiss', 'discard'];
 
     for (const button of buttons) {
+      if (button.disabled) continue;
+
+      const buttonText = (button.textContent || '').toLowerCase().trim();
+      const buttonLabel = (button.getAttribute('aria-label') || '').toLowerCase().trim();
+      const combinedText = `${buttonText} ${buttonLabel}`;
+
+      // Skip buttons we want to avoid (like Back)
+      const hasAvoidWord = avoidWords.some(word => combinedText.includes(word));
+      if (hasAvoidWord) {
+        log(`  Skipping button with avoid word: "${buttonText}"`, 'info');
+        continue;
+      }
+
+      // Check if this button matches what we're looking for
       for (const text of textOptions) {
-        if (buttonContainsText(button, text)) {
-          return button;
+        if (combinedText.includes(text.toLowerCase())) {
+          const style = window.getComputedStyle(button);
+          if (style.display !== 'none' && style.visibility !== 'hidden') {
+            log(`  ✅ Found button: "${buttonText}"`, 'success');
+            return button;
+          }
         }
       }
     }
 
+    log(`  ❌ No button found for: ${textOptions.join(', ')}`, 'warn');
     return null;
   }
 
